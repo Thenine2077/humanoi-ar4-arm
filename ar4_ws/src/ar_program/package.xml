@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ar_program</name>
+  <version>0.1.0</version>
+  <description>
+    Pre-programmed motions for the AR4 arm, triggered over ROS 2.
+    Poses are taught by recording /joint_states into a YAML file; a player node
+    runs a named sequence of poses on the joint_trajectory_controller when it
+    receives a program name on /arm/run, and reports back on /arm/done.
+  </description>
+  <license>MIT</license>
+  <maintainer email="sale2@eitlaser.com">User</maintainer>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>trajectory_msgs</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

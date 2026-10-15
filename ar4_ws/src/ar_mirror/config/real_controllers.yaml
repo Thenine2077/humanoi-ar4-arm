@@ -1,0 +1,57 @@
+# สำเนาค่าจาก ar_hardware_interface/config/controllers.yaml ของผู้ขาย (ไฟล์ต้นฉบับไม่ถูกแก้)
+# ต่างจากต้นฉบับ 2 จุด เพราะในชุด dual ฝั่งแขนจริงถูกรันใต้ namespace /real:
+#
+#   1) คีย์ระดับบนต้องเป็นชื่อโหนดเต็ม "/real/..." — ของผู้ขายใช้ "controller_manager:"
+#      เฉยๆ ซึ่ง ROS 2 ตีความว่าเป็นโหนดใน root namespace เท่านั้น พอโหนดจริงชื่อ
+#      /real/controller_manager มันเลยไม่เห็นพารามิเตอร์ใดๆ แล้ว spawner ตายด้วย
+#      "The 'type' param was not defined for 'joint_state_broadcaster'"
+#
+#   2) update_rate ลด 100 -> 50 Hz: รันคู่กับ Gazebo แล้ว loop ตามไม่ทัน log เต็มไปด้วย
+#      "Overrun detected!" (read/write ผ่าน usbip ใช้เวลา 6-22 ms ต่อรอบ เกินงบ 10 ms)
+#      และจบด้วย serial หลุด "End of file" — 50 Hz ให้งบ 20 ms ต่อรอบ พอสำหรับ usbip
+/real/controller_manager:
+  ros__parameters:
+    # ทุกรอบของ controller_manager ยิง serial round-trip "สองครั้ง" ไม่ใช่ครั้งเดียว
+    #   ARHardwareInterface::read()  -> TeensyDriver::getJointPositions() -> ส่ง "JP\n" แล้วรอคำตอบ
+    #   ARHardwareInterface::write() -> TeensyDriver::update()            -> ส่ง "MT...\n" แล้วรอคำตอบ
+    # ทั้งคู่เป็น blocking request/response และ TeensyDriver::receive() อ่านทีละ 1 ไบต์จนเจอ '\n'
+    # งบเวลาต่อรอบจึงเท่ากับ 2 × เวลา round-trip ของช่องทางที่ใช้อยู่
+    #
+    # วัดจริง (ยิง "JP\n" 10 Hz ต่อเนื่อง 60 วินาที × 2 รอบ):
+    #   ผ่าน usbip           25-43 ms ต่อ round-trip  และหลุด "End of file" ภายใน ~1 นาที
+    #   เปิด COM ตรงบน Windows  1.0 ms ต่อ round-trip  599/599 สำเร็จ ไม่มี timeout เลย
+    # ต่างกัน 30 เท่า -> คอขวดคือ usbip ล้วนๆ ไม่ใช่บอร์ดหรือสายไฟ
+    # ตอนนี้ใช้สะพาน serial-over-TCP (tools/serial_bridge_*.py|sh) แทน usbip แล้ว
+    # 30 Hz ให้งบ 33 ms/รอบ เหลือเฟือสำหรับ ~2-5 ms ของสะพาน และขยับลื่นกว่า 10 Hz มาก
+    # ถ้าเจอ "Overrun detected!" รัวๆ ค่อยลดลงมาเป็น 20
+    update_rate: 30 # Hz
+
+    joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+/real/joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - joint_1
+      - joint_2
+      - joint_3
+      - joint_4
+      - joint_5
+      - joint_6
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.02
+      goal_time: 0.0
+      joint_1: { trajectory: 0.2, goal: 0.02 }
+      joint_2: { trajectory: 0.2, goal: 0.02 }
+      joint_3: { trajectory: 0.2, goal: 0.02 }
+      joint_4: { trajectory: 0.2, goal: 0.02 }
+      joint_5: { trajectory: 0.2, goal: 0.02 }
+      joint_6: { trajectory: 0.2, goal: 0.02 }

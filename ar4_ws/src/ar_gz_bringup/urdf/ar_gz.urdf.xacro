@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!-- Gazebo Harmonic (gz-sim) version of the vendor's ar_gazebo.urdf.xacro.
+     Reuses ar_description's ar_macro.xacro (links/joints/meshes) and
+     ar.ros2_control.xacro (joint limits + ros2_control block) UNMODIFIED via
+     xacro:include — only the simulation plugin differs: gz_ros2_control
+     (Harmonic) instead of gazebo_ros2_control (Classic, not available on
+     ROS 2 Jazzy). See docs in Humanoi's ar4-robot-arm-vendor memory. -->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
+  <xacro:include filename="$(find ar_description)/urdf/ar_macro.xacro"/>
+  <xacro:include filename="$(find ar_description)/urdf/ar.ros2_control.xacro"/>
+
+  <xacro:arg name="name" default="ar"/>
+  <xacro:arg name="simulation_controllers" default=""/>
+
+  <link name="world"/>
+  <xacro:ar_robot parent="world">
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </xacro:ar_robot>
+
+  <!-- เขียน <ros2_control> เองแทนการเรียก xacro:ar_ros2_control ของผู้ขาย เพราะไฟล์
+       ar.ros2_control.xacro มี 2 จุดที่ใช้กับ sim ไม่ได้ (อ่านอย่างเดียว ไม่แก้ไฟล์นั้น):
+       1) limit เขียนเป็น "{-170*pi/180}" ขาด "$" นำหน้า (ต้อง "${...}" ถึงจะให้ xacro
+          คำนวณ) เลยหลุดเป็นข้อความดิบที่ gz_ros2_control parse เป็นตัวเลขไม่ได้ (log:
+          "Error parsing the limits...Skipping it") — ด้านล่างนี้คำนวณเป็นเรเดียนตรงๆแล้ว
+       2) ไม่ได้ตั้ง position_proportional_gain เลย ทำให้ gz_ros2_control ใช้ default 0.1
+          ซึ่งอ่อนเกินไปต้านแรงโน้มถ่วง แขนเลยค่อยๆห้อยลงจนสุด hard-stop ภายในไม่กี่สิบวินาที
+          (คือสาเหตุจริงที่ CheckStartStateBounds ติด joint_3/joint_5 ซ้ำๆ) -->
+  <ros2_control name="$(arg name)" type="system">
+    <hardware>
+      <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      <param name="serial_port">None</param>
+      <param name="calibrate">False</param>
+      <!-- gz_ros2_control อ่าน gain นี้จากระดับ <hardware> (ไม่ใช่ราย joint) แล้วใช้
+           คำนวณ velocity command = gain * (target - actual) ค่า default 0.1 ช้าเกินไป -->
+      <param name="position_proportional_gain">20.0</param>
+    </hardware>
+    <joint name="joint_1">
+      <command_interface name="position">
+        <param name="min">-2.967060</param>
+        <param name="max">2.967060</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="joint_2">
+      <command_interface name="position">
+        <param name="min">-0.733038</param>
+        <param name="max">1.570796</param>
+      </command_interface>
+      <state_interface name="position">
+        <!-- ตั้งให้ตรงกับ "ท่าพัก" จริงของแขนหลัง calibrate (วัดได้ -5.84 องศา = -0.1019 rad
+             จาก log ของ ar_hardware_interface 2026-09-17) เพื่อให้ซิมกับแขนจริงเริ่มที่ท่า
+             เดียวกัน — ไม่งั้นตอนเปิด mirror แขนจริงจะถูกสั่งวิ่งไป 0 องศาทันทีแบบกระชาก -->
+        <param name="initial_value">-0.1019</param>
+      </state_interface>
+    </joint>
+    <joint name="joint_3">
+      <command_interface name="position">
+        <param name="min">-1.553343</param>
+        <param name="max">0.907571</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="joint_4">
+      <command_interface name="position">
+        <param name="min">-2.879793</param>
+        <param name="max">2.879793</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="joint_5">
+      <command_interface name="position">
+        <param name="min">-1.832596</param>
+        <param name="max">1.832596</param>
+      </command_interface>
+      <state_interface name="position">
+        <!-- ท่าพักจริงของแขนหลัง calibrate = -52.16 องศา = -0.9103 rad (เหตุผลเดียวกับ joint_2) -->
+        <param name="initial_value">-0.9103</param>
+      </state_interface>
+    </joint>
+    <joint name="joint_6">
+      <command_interface name="position">
+        <param name="min">-2.705260</param>
+        <param name="max">2.705260</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+  </ros2_control>
+
+  <gazebo reference="world"/>
+  <gazebo>
+    <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg simulation_controllers)</parameters>
+    </plugin>
+  </gazebo>
+</robot>

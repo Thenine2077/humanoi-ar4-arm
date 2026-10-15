@@ -1,0 +1,7 @@
+# เก็บและ checkout เป็น LF เสมอ — แพ็กเกจถูกส่งไป build/รันบน Raspberry Pi (Linux)
+* text=auto eol=lf
+*.bat text eol=crlf
+*.STL binary
+*.stl binary
+*.png binary
+*.pdf binary

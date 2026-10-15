@@ -1,0 +1,20 @@
+# เหมือน ar_moveit_config/config/controllers.yaml ของผู้ขายทุกอย่าง แค่เขียนใหม่เป็น
+# ros2_parameters format ตรงๆ (ไม่ผ่าน Python dict) เหตุผลเดียวกับ ompl_planning_pipeline.yaml
+# — controller_names และ joints เป็น list ถ้าผ่าน dict จะโดน launch_ros แปลงเป็น
+# !!python/tuple แล้ว parse ทั้งไฟล์พัง (moveit_controller_manager หา controller ไม่เจอ
+# ตอนกด Execute แม้ Plan จะผ่านแล้วก็ตาม)
+/**:
+  ros__parameters:
+    moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+    moveit_simple_controller_manager.controller_names:
+      - joint_trajectory_controller
+    moveit_simple_controller_manager.joint_trajectory_controller.action_ns: follow_joint_trajectory
+    moveit_simple_controller_manager.joint_trajectory_controller.type: FollowJointTrajectory
+    moveit_simple_controller_manager.joint_trajectory_controller.default: true
+    moveit_simple_controller_manager.joint_trajectory_controller.joints:
+      - joint_1
+      - joint_2
+      - joint_3
+      - joint_4
+      - joint_5
+      - joint_6

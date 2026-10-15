@@ -1,0 +1,20 @@
+# ไฟล์ดาวน์โหลดจากผู้ขาย (ใหญ่ ~8 GB และไม่ใช่โค้ดของเรา)
+sendgb-*/
+sendgb-*.zip
+
+# ROS 2 build outputs
+ar4_ws/build/
+ar4_ws/install/
+ar4_ws/log/
+
+# Arduino build outputs
+firmware/*/build/
+
+# Python
+__pycache__/
+*.pyc
+
+# backups / temp
+*.bak
+*.bak_*
+*.tmp
