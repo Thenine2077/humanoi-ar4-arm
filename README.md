@@ -1,7 +1,7 @@
 # humanoi-ar4-arm
 
 แขนกล AR4 (เครื่อง clone ของ Annin Robotics AR4 — Teensy 4.1 + Arduino Nano) สำหรับหุ่น Humanoi — ROS 2 Jazzy
-ใช้คู่กับ repo **humanoi** (ฐาน/Pi/Docker/คู่มือ) — clone ไว้ข้างกัน โดยตั้งชื่อโฟลเดอร์ repo นี้ว่า `ar4`:
+ใช้คู่กับ repo **[humanoi](https://github.com/Thenine2077/humanoi)** (ฐาน/Pi/Docker/คู่มือ) — clone ไว้ข้างกัน โดยตั้งชื่อโฟลเดอร์ repo นี้ว่า `ar4`:
 
 ```
 Desktop/
