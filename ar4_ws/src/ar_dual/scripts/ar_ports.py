@@ -70,6 +70,10 @@ def probe(dev):
 
 def teensy_ports():
     """พอร์ต Teensy ทุกตัว (VID 16c0) — ไม่แตะ CH340 ของ Nano/Mega"""
+    if os.name == "nt":  # Windows (PC): พอร์ตเป็น COMx — ถามรายการจาก pyserial แทน /dev + /sys
+        from serial.tools import list_ports
+        return sorted((p.device for p in list_ports.comports() if p.vid == 0x16C0),
+                      key=lambda d: int(re.sub(r"\D", "", d) or 0))
     out = []
     for dev in sorted(glob.glob("/dev/ttyACM*")):
         vid = ""
@@ -193,7 +197,8 @@ def main():
         return identify()
     if args[:1] == ["--wiggle"] and len(args) == 2:
         port = args[1]
-        if not os.path.exists(port):
+        is_com = os.name == "nt" and re.fullmatch(r"(?i)COM\d+", port)  # Windows: COMx ไม่ใช่ไฟล์
+        if not is_com and not os.path.exists(port):
             name = ARM_ALIASES.get(port.lower(), port)
             port = next((i["port"] for i in map(probe, teensy_ports()) if i["name"] == name), None)
             if port is None:

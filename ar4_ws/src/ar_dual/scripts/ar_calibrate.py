@@ -6,6 +6,7 @@
   ar_calibrate.py <พอร์ต Teensy> 456 123         # กลุ่มละหลายข้อพร้อมกัน
   ar_calibrate.py <พอร์ต Teensy> all             # 6 ข้อพร้อมกันแบบต้นฉบับ (มือที่ติดปลายแขนอาจชน)
   (arm calibrate left|right ... เรียกตัวนี้ให้)
+  บน Windows ใช้ชื่อ COM ได้ตรงๆ:  python ar_calibrate.py COM9 6 5 4 1 2 3   (ต้องมี pyserial)
 
 เลือกข้อได้ต้องใช้เฟิร์มแวร์ AR4_ROS2_seq (C:\\ar4_fw\\AR4_ROS2_seq) — ตัวนี้ถาม JV ก่อน ต้นฉบับไม่ตอบ JV และ
 ถ้าได้ JC5 จะ calibrate ทั้ง 6 ข้อพร้อมกัน จึงไม่ส่งเลือกข้อให้เฟิร์มแวร์ต้นฉบับเด็ดขาด
@@ -104,9 +105,14 @@ def main():
         done = "".join(groups)
         if len(set(done)) != len(done):
             sys.exit("มีข้อต่อซ้ำกันในลำดับ — แต่ละข้อใส่ได้ครั้งเดียว")
-    if not os.path.exists(path):
+    # Windows: พอร์ตเป็นชื่อ COM9 ไม่ใช่ไฟล์ — os.path.exists ใช้เช็กไม่ได้ ปล่อยให้ open_port ลองเปิดเอง
+    is_com = path.upper().startswith("COM") and path[3:].isdigit()
+    if not is_com and not os.path.exists(path):
         sys.exit(f"ไม่เจอ {path} — เสียบ USB ของแขนและเปิดไฟแขนก่อน")
-    ser = open_port(path, wait=5)
+    try:
+        ser = open_port(path, wait=5)
+    except (serial.SerialException, OSError) as exc:
+        sys.exit(f"เปิด {path} ไม่ได้ ({exc}) — เสียบ USB ของแขน เปิดไฟแขน และปิดโปรแกรมอื่นที่ใช้พอร์ตนี้อยู่")
     # เช็กก่อนว่าเป็นเฟิร์มแวร์ ROS และตอบอยู่ (ไม่ขยับแขน)
     if not ask(ser, b"JP\n", "JP"):
         sys.exit(f"Teensy ที่ {path} ไม่ตอบแบบเฟิร์มแวร์ ROS — ไม่ calibrate")
