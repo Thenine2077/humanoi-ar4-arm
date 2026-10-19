@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""teach — บันทึกท่าปัจจุบันของแขนลงไฟล์ และจัดการโปรแกรม
+"""teach — บันทึกท่าปัจจุบันของแขนลงไฟล์ และจัดการโปรแกรม (สองแขน: left = แขน 1, right = แขน 2)
 
-  ros2 run ar_program teach <ชื่อท่า>                       # เก็บท่าปัจจุบัน (ทับของเดิมถ้าชื่อซ้ำ)
-  ros2 run ar_program teach --list                          # ดูท่าและโปรแกรมทั้งหมด
-  ros2 run ar_program teach --program pick above grasp wait=1.0 above
-  ros2 run ar_program teach --delete <ชื่อท่า>
+  ros2 run ar_program teach <ชื่อท่า> --arm left           # เก็บท่าปัจจุบันของแขนซ้าย (ทับของเดิมถ้าชื่อซ้ำ)
+  ros2 run ar_program teach --list                         # ดูท่าของทุกแขนและโปรแกรมทั้งหมด
+  ros2 run ar_program teach --show pick2                   # ดูโปรแกรมเป็นตาราง ขั้น | ซ้าย | ขวา
+  ros2 run ar_program teach --program pick2 act1/act1 act2/- act3/act2 -/act3 wait=1.0
+  ros2 run ar_program teach --delete <ชื่อท่า> --arm right
   ros2 run ar_program teach --delete-program <ชื่อโปรแกรม>
 
-ตัวเลือก
-  --file   ไฟล์ท่า (ค่าเริ่มต้น src/ar_program/config/programs.yaml)
-  --topic  หัวข้อ joint_states (ค่าเริ่มต้น /joint_states, แขนจริงในชุด dual ใช้ /real/joint_states)
+ขั้นของโปรแกรม: <ท่าแขนซ้าย>/<ท่าแขนขวา> — ใช้ - (หรือ still) ถ้าแขนนั้นอยู่นิ่งในขั้นนั้น · wait=วินาที = รอ
 
-Jog แขนให้ได้ท่าก่อน (MotionPlanning > Joints ใน RViz แล้ว Plan & Execute) แล้วค่อยสั่ง teach
+ตัวเลือก
+  --file    ไฟล์ท่า (ค่าเริ่มต้น src/ar_program/config/programs.yaml)
+  --topic   หัวข้อ joint_states (ค่าเริ่มต้น /joint_states, แขนจริงในชุด dual_real_sim ใช้ /real/joint_states)
+  --layout  dual (ค่าเริ่ม ar_dual สองแขน) | single (แขนเดี่ยวแบบเดิม ข้อต่อ joint_N — ใช้กับซิมบน PC)
+
+Jog แขนให้ได้ท่าก่อน (RViz: Planning Group เลือกแขน -> แท็บ Joints หรือลากลูกบอล -> Plan & Execute)
+แล้วค่อยสั่ง teach
 """
 import argparse
 import math
@@ -20,12 +25,14 @@ import time
 
 from ar_program import programs
 
+ARM_TH = {"left": "ซ้าย", "right": "ขวา"}
+
 
 def deg(values):
     return "[" + ", ".join(f"{math.degrees(v):7.1f}°" for v in values) + "]"
 
 
-def read_current(topic, timeout=5.0):
+def read_current(topic, names, timeout=5.0):
     import rclpy
     from sensor_msgs.msg import JointState
 
@@ -36,63 +43,96 @@ def read_current(topic, timeout=5.0):
         JointState, topic,
         lambda m: got.update(dict(zip(m.name, m.position))), 10)
     end = time.monotonic() + timeout
-    while time.monotonic() < end and not all(j in got for j in programs.JOINTS):
+    while time.monotonic() < end and not all(j in got for j in names):
         rclpy.spin_once(node, timeout_sec=0.1)
     node.destroy_node()
     rclpy.shutdown()
-    if not all(j in got for j in programs.JOINTS):
-        missing = [j for j in programs.JOINTS if j not in got]
-        sys.exit(f"ไม่ได้รับ {topic} ครบภายใน {timeout:.0f} วินาที (ขาด {missing}) — ซิม/แขนเปิดอยู่ไหม")
-    return [got[j] for j in programs.JOINTS]
+    if not all(j in got for j in names):
+        missing = [j for j in names if j not in got]
+        sys.exit(f"ไม่ได้รับ {topic} ครบภายใน {timeout:.0f} วินาที (ขาด {missing}) — ระบบแขนเปิดอยู่ไหม")
+    return [got[j] for j in names]
 
 
-def parse_steps(tokens):
-    steps = []
-    for t in tokens:
-        if t.startswith("wait="):
-            steps.append({"wait": float(t[5:])})
-        else:
-            steps.append(t)
-    return steps
+def print_table(data, name):
+    rows = programs.table(data, name)
+    w = max([len("แขนซ้าย (1)")] + [len(r[1]) for r in rows])
+    print(f"โปรแกรม '{name}' ({len(rows)} ขั้น)")
+    print(f"  {'ขั้น':>4}  {'แขนซ้าย (1)':<{w}}  แขนขวา (2)")
+    for i, left, right in rows:
+        print(f"  {i:>4}  {left:<{w}}  {right}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("name", nargs="?", help="ชื่อท่าที่จะบันทึก")
+    ap.add_argument("--arm", help="แขนที่จะ teach / ลบท่า: left (1) หรือ right (2)")
     ap.add_argument("--file", default=programs.DEFAULT_FILE)
     ap.add_argument("--topic", default="/joint_states")
+    ap.add_argument("--layout", default="dual", choices=["dual", "single"])
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--show", metavar="ชื่อโปรแกรม")
     ap.add_argument("--program", nargs="+", metavar=("ชื่อ", "ขั้น"),
-                    help="ตั้งโปรแกรม: ชื่อ ตามด้วยชื่อท่า/wait=วินาที ตามลำดับ")
+                    help="ตั้งโปรแกรม: ชื่อ ตามด้วยขั้น <ซ้าย>/<ขวา> หรือ wait=วินาที ตามลำดับ")
     ap.add_argument("--delete", metavar="ชื่อท่า")
     ap.add_argument("--delete-program", metavar="ชื่อโปรแกรม")
     # ros2 run ส่ง --ros-args มาด้วยบางครั้ง ตัดทิ้งก่อน parse
     argv = sys.argv[1:]
     if "--ros-args" in argv:
         argv = argv[:argv.index("--ros-args")]
+    # ขั้นของ --program เช่น "-/act3" ขึ้นต้นด้วย - ซึ่ง argparse จะเข้าใจผิดว่าเป็นตัวเลือก — แยกออกมาเองก่อน
+    program_tokens = None
+    if "--program" in argv:
+        i = argv.index("--program")
+        argv, program_tokens = argv[:i], argv[i + 1:]
+        if not program_tokens:
+            sys.exit("ใช้: --program <ชื่อ> <ซ้าย>/<ขวา> ... (เช่น pick2 act1/act1 act2/- -/act3 wait=1.0)")
     args = ap.parse_args(argv)
+    if program_tokens is not None:
+        args.program = program_tokens
 
     data = programs.load(args.file)
 
+    def need_arm():
+        if args.layout == "single":
+            return "left"
+        if not args.arm:
+            sys.exit("ระบุแขนด้วย --arm left (แขน 1) หรือ --arm right (แขน 2)")
+        try:
+            return programs.arm_of(args.arm)
+        except programs.ProgramError as exc:
+            sys.exit(str(exc))
+
     if args.list:
         print(f"ไฟล์: {args.file}")
-        print(f"\nท่า ({len(data['poses'])})   ลำดับ joint_1 .. joint_6")
-        for name, vals in data["poses"].items():
-            print(f"  {name:<14} {deg(vals)}")
-        print(f"\nโปรแกรม ({len(data['programs'])})")
-        for name, steps in data["programs"].items():
-            shown = " → ".join(s if isinstance(s, str) else f"wait {s['wait']}s" for s in steps)
+        for arm in programs.ARMS:
+            poses = data["poses"][arm]
+            print(f"\nท่าแขน{ARM_TH[arm]} ({len(poses)})   ลำดับ joint_1 .. joint_6")
+            for name, vals in poses.items():
+                print(f"  {name:<14} {deg(vals)}")
+        print(f"\nโปรแกรม ({len(data['programs'])})   ดูทีละขั้นด้วย --show <ชื่อ>")
+        for name in data["programs"]:
+            rows = programs.table(data, name)
+            shown = " → ".join(left if right in ("still", "") else f"{left}/{'-' if right == 'still' else right}"
+                               for _, left, right in rows)
             print(f"  {name:<14} {shown}")
         return
 
+    if args.show:
+        if args.show not in data["programs"]:
+            sys.exit(f"ไม่มีโปรแกรม '{args.show}' — ที่มี: {', '.join(data['programs']) or '(ยังไม่มี)'}")
+        print_table(data, args.show)
+        return
+
     if args.delete:
-        used = [p for p, steps in data["programs"].items() if args.delete in steps]
+        arm = need_arm()
+        used = [p for p, steps in data["programs"].items()
+                if any((programs.step_arms(s) or {}).get(arm) == args.delete for s in steps)]
         if used:
-            sys.exit(f"ลบไม่ได้ — ท่า '{args.delete}' ยังถูกใช้ในโปรแกรม: {', '.join(used)}")
-        if data["poses"].pop(args.delete, None) is None:
-            sys.exit(f"ไม่มีท่า '{args.delete}'")
+            sys.exit(f"ลบไม่ได้ — ท่า '{args.delete}' ของแขน{ARM_TH[arm]} ยังถูกใช้ในโปรแกรม: {', '.join(used)}")
+        if data["poses"][arm].pop(args.delete, None) is None:
+            sys.exit(f"แขน{ARM_TH[arm]}ไม่มีท่า '{args.delete}'")
         programs.save(args.file, data)
-        print(f"ลบท่า '{args.delete}' แล้ว")
+        print(f"ลบท่า '{args.delete}' ของแขน{ARM_TH[arm]}แล้ว")
         return
 
     if args.delete_program:
@@ -104,35 +144,40 @@ def main():
         return
 
     if args.program:
-        name, steps = args.program[0], parse_steps(args.program[1:])
+        name = args.program[0]
         if name.startswith("@"):
             sys.exit("ชื่อโปรแกรมห้ามขึ้นต้นด้วย @ (สงวนไว้สำหรับสั่งไปท่าเดียว เช่น @rest)")
-        data["programs"][name] = steps
         try:
+            if args.layout == "single":  # แขนเดี่ยว: ชื่อท่าเปล่าๆ แบบเดิม
+                steps = [{"wait": float(t[5:])} if t.startswith("wait=") else t for t in args.program[1:]]
+            else:
+                steps = [programs.parse_cli_step(t) for t in args.program[1:]]
+            data["programs"][name] = steps
             resolved = programs.resolve(data, name)  # ตรวจก่อนบันทึก
-        except programs.ProgramError as exc:
+        except (programs.ProgramError, ValueError) as exc:
             sys.exit(f"บันทึกไม่ได้: {exc}")
         programs.save(args.file, data)
-        print(f"บันทึกโปรแกรม '{name}' ({len(resolved)} ขั้น) ลง {args.file}")
-        print(f"สั่งรัน:  ros2 topic pub --once /arm/run std_msgs/msg/String \"{{data: {name}}}\"")
+        print(f"บันทึกโปรแกรม '{name}' ({len(resolved)} ขั้น) ลง {args.file}\n")
+        print_table(data, name)
         return
 
     if not args.name:
         ap.print_help()
         return
 
-    values = read_current(args.topic)
+    arm = need_arm()
+    values = read_current(args.topic, programs.joint_names(arm, args.layout))
     try:
         programs.check_pose(args.name, values)
     except programs.ProgramError as exc:
         sys.exit(f"ไม่บันทึก: {exc}")
-    old = data["poses"].get(args.name)
-    data["poses"][args.name] = values
+    old = data["poses"][arm].get(args.name)
+    data["poses"][arm][args.name] = values
     programs.save(args.file, data)
     if old:
-        print(f"แทนที่ท่า '{args.name}'\n  เดิม {deg(old)}\n  ใหม่ {deg(values)}")
+        print(f"แทนที่ท่า '{args.name}' ของแขน{ARM_TH[arm]}\n  เดิม {deg(old)}\n  ใหม่ {deg(values)}")
     else:
-        print(f"บันทึกท่า '{args.name}' {deg(values)}")
+        print(f"บันทึกท่า '{args.name}' ของแขน{ARM_TH[arm]} {deg(values)}")
 
 
 if __name__ == "__main__":

@@ -41,3 +41,4 @@ programs:
   - {wait: 2.0}
   - home
   movehome: [to_home_1, to_home_2, to_home_3, home, to_home_3, to_home_2, to_home_1]
+  move_ready: [to_home_1, to_home_2, to_home_3]

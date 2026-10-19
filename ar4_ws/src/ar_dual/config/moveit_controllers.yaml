@@ -1,0 +1,28 @@
+# MoveIt สั่งแขนผ่าน FollowJointTrajectory ของตัวคุมแต่ละแขน — เขียน YAML ตรงๆ (list ผ่าน Python dict
+# จะกลายเป็น !!python/tuple แล้ว parse ทั้งไฟล์พัง — ดู ar_gz_bringup/config/moveit_controllers.yaml)
+/**:
+  ros__parameters:
+    moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
+    moveit_simple_controller_manager.controller_names:
+      - left_arm_controller
+      - right_arm_controller
+    moveit_simple_controller_manager.left_arm_controller.action_ns: follow_joint_trajectory
+    moveit_simple_controller_manager.left_arm_controller.type: FollowJointTrajectory
+    moveit_simple_controller_manager.left_arm_controller.default: true
+    moveit_simple_controller_manager.left_arm_controller.joints:
+      - left_joint_1
+      - left_joint_2
+      - left_joint_3
+      - left_joint_4
+      - left_joint_5
+      - left_joint_6
+    moveit_simple_controller_manager.right_arm_controller.action_ns: follow_joint_trajectory
+    moveit_simple_controller_manager.right_arm_controller.type: FollowJointTrajectory
+    moveit_simple_controller_manager.right_arm_controller.default: true
+    moveit_simple_controller_manager.right_arm_controller.joints:
+      - right_joint_1
+      - right_joint_2
+      - right_joint_3
+      - right_joint_4
+      - right_joint_5
+      - right_joint_6
