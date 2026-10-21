@@ -5,10 +5,13 @@
   ros2 run ar_program teach --list                         # ดูท่าของทุกแขนและโปรแกรมทั้งหมด
   ros2 run ar_program teach --show pick2                   # ดูโปรแกรมเป็นตาราง ขั้น | ซ้าย | ขวา
   ros2 run ar_program teach --program pick2 act1/act1 act2/- act3/act2 -/act3 wait=1.0
+  ros2 run ar_program teach --program grab act1/- -/-/rock act2/-/paper     # มีท่ามือ
   ros2 run ar_program teach --delete <ชื่อท่า> --arm right
   ros2 run ar_program teach --delete-program <ชื่อโปรแกรม>
 
-ขั้นของโปรแกรม: <ท่าแขนซ้าย>/<ท่าแขนขวา> — ใช้ - (หรือ still) ถ้าแขนนั้นอยู่นิ่งในขั้นนั้น · wait=วินาที = รอ
+ขั้นของโปรแกรม: <ท่าแขนซ้าย>/<ท่าแขนขวา>[/<มือซ้าย>[/<มือขวา>]] — ใช้ - (หรือ still) ถ้าไม่ขยับในขั้นนั้น
+  ท่ามือ: rock paper scissors point like windup victory nonono relax · wait=วินาที = รอ
+  แขนกับมือในขั้นเดียวกันขยับพร้อมกัน — อยากให้แขนถึงก่อนแล้วมือค่อยกำ ให้แยกขั้น: act1/- แล้ว -/-/rock
 
 ตัวเลือก
   --file    ไฟล์ท่า (ค่าเริ่มต้น src/ar_program/config/programs.yaml)
@@ -55,11 +58,13 @@ def read_current(topic, names, timeout=5.0):
 
 def print_table(data, name):
     rows = programs.table(data, name)
-    w = max([len("แขนซ้าย (1)")] + [len(r[1]) for r in rows])
+    hands = any(r[3] not in ("", "-") or r[4] not in ("", "-") for r in rows)  # มีท่ามือ = แสดงคอลัมน์มือด้วย
+    cols = ["แขนซ้าย (1)", "แขนขวา (2)"] + (["มือซ้าย", "มือขวา"] if hands else [])
+    widths = [max([len(c)] + [len(r[k + 1]) for r in rows]) for k, c in enumerate(cols)]
     print(f"โปรแกรม '{name}' ({len(rows)} ขั้น)")
-    print(f"  {'ขั้น':>4}  {'แขนซ้าย (1)':<{w}}  แขนขวา (2)")
-    for i, left, right in rows:
-        print(f"  {i:>4}  {left:<{w}}  {right}")
+    print(f"  {'ขั้น':>4}  " + "  ".join(f"{c:<{w}}" for c, w in zip(cols, widths)).rstrip())
+    for r in rows:
+        print(f"  {r[0]:>4}  " + "  ".join(f"{v:<{w}}" for v, w in zip(r[1:1 + len(cols)], widths)).rstrip())
 
 
 def main():
@@ -85,7 +90,8 @@ def main():
         i = argv.index("--program")
         argv, program_tokens = argv[:i], argv[i + 1:]
         if not program_tokens:
-            sys.exit("ใช้: --program <ชื่อ> <ซ้าย>/<ขวา> ... (เช่น pick2 act1/act1 act2/- -/act3 wait=1.0)")
+            sys.exit("ใช้: --program <ชื่อ> <แขนซ้าย>/<แขนขวา>[/<มือซ้าย>[/<มือขวา>]] ... "
+                     "(เช่น grab act1/- -/-/rock act2/-/paper wait=1.0)")
     args = ap.parse_args(argv)
     if program_tokens is not None:
         args.program = program_tokens
@@ -111,9 +117,7 @@ def main():
                 print(f"  {name:<14} {deg(vals)}")
         print(f"\nโปรแกรม ({len(data['programs'])})   ดูทีละขั้นด้วย --show <ชื่อ>")
         for name in data["programs"]:
-            rows = programs.table(data, name)
-            shown = " → ".join(left if right in ("still", "") else f"{left}/{'-' if right == 'still' else right}"
-                               for _, left, right in rows)
+            shown = " → ".join(programs.cli_step(r) for r in programs.table(data, name))
             print(f"  {name:<14} {shown}")
         return
 

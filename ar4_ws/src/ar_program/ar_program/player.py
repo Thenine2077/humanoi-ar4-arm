@@ -10,7 +10,9 @@
   /arm/run   (sub, String)  ชื่อโปรแกรมใน programs.yaml, "@ท่า" (แขนซ้าย) หรือ "@right:ท่า" = ไปท่าเดียว
   /arm/stop  (sub, Empty)   ยกเลิกโปรแกรมที่กำลังรัน (ทุกแขนหยุดที่ตำแหน่งปัจจุบัน)
   /arm/done  (pub, String)  "<โปรแกรม>:ok" | ":error:<เหตุผล>" | ":stopped" | ":rejected:busy"
-  /arm/state (pub, String)  "idle" | "running:<โปรแกรม>:<ขั้นที่>/<ทั้งหมด>:<ซ้าย>/<ขวา>"
+  /arm/state (pub, String)  "idle" | "running:<โปรแกรม>:<ขั้นที่>/<ทั้งหมด>:<ซ้าย>/<ขวา>[ มือ <ท่า>]"
+  /hand/gesture       (pub, String)  ท่ามือของมือบนแขนซ้าย (amazinghand_node ใน humanoi_games)
+  /right_hand/gesture (pub, String)  ท่ามือของมือบนแขนขวา (ยังไม่มีมือ — ถ้าไม่มีใครฟังจะเตือนแล้วข้าม)
 
 พารามิเตอร์
   programs_file       ไฟล์ท่า/โปรแกรม (อ่านใหม่ทุกครั้งที่สั่งรัน แก้ไฟล์แล้วไม่ต้องรีสตาร์ท)
@@ -27,6 +29,7 @@
   min_move_time       เวลาขั้นต่ำต่อท่า วินาที (กันสั่งกระชากตอนท่าห่างกันนิดเดียว)
 
 ทุกขั้น แขนที่มีท่าเริ่มพร้อมกัน แขนที่ still ไม่ถูกสั่ง (ค้างอยู่ที่เดิม) ขั้นถัดไปเริ่มเมื่อทุกแขนถึงแล้ว
+ท่ามือในขั้นส่งตอนเริ่มขั้น (ขยับพร้อมแขน) ขั้นจบเมื่อแขนถึงและมือใช้เวลาครบ (programs.HAND_GESTURES)
 ทุกท่าส่งตรงเข้า joint_trajectory_controller เป็นเส้นตรงในปริภูมิข้อต่อ (เหมือน Move J ของ HMI)
 ด้วยโปรไฟล์ เร่ง → ความเร็วคงที่ → เบรก (programs.trapezoid) ไม่ผ่าน MoveIt จึงไม่มีการเช็คการชน
 — รวมถึงสองแขนชนกันเอง/ชนเสา ผลออกมาเหมือนเดิมทุกรอบ ทดสอบโปรแกรมช้าๆ ก่อนเสมอ
@@ -77,6 +80,8 @@ class ArmProgram(Node):
         self.declare_parameter("accel", 0.08)
         self.declare_parameter("max_speed", 0.22)
         self.declare_parameter("min_move_time", 1.0)
+        self.declare_parameter("left_hand_topic", "/hand/gesture")
+        self.declare_parameter("right_hand_topic", "/right_hand/gesture")
 
         cb = ReentrantCallbackGroup()
         self.layout = self.get_parameter("layout").value
@@ -92,6 +97,8 @@ class ArmProgram(Node):
             callback_group=cb)
         self.create_subscription(String, "/arm/run", self._on_run, 10, callback_group=cb)
         self.create_subscription(Empty, "/arm/stop", self._on_stop, 10, callback_group=cb)
+        self.hand_pubs = {arm: self.create_publisher(String, self.get_parameter(f"{arm}_hand_topic").value, 10)
+                          for arm in programs.ARMS}
         self.done_pub = self.create_publisher(String, "/arm/done", 10)
         self.state_pub = self.create_publisher(String, "/arm/state", 10)
 
@@ -157,7 +164,11 @@ class ArmProgram(Node):
         except (programs.ProgramError, OSError) as exc:
             return f"error:{exc}"
 
-        used = {arm for kind, value in steps if kind == "move" for arm in value}
+        used = {arm for kind, value, _ in steps if kind == "move" for arm in value}
+        for arm in sorted({arm for _, _, hands in steps for arm in hands}):
+            if not self.hand_pubs[arm].get_subscription_count():
+                self.get_logger().warn(f"ไม่มีตัวคุมมือบนแขน{ARM_TH[arm]} ฟังอยู่ "
+                                       f"({self.hand_pubs[arm].topic_name}) — ท่ามือของแขนนี้จะถูกข้าม")
         for arm in used:
             if not self.action_clients[arm].wait_for_server(timeout_sec=3.0):
                 return f"error:ไม่พบตัวคุมแขน{ARM_TH[arm]} (ระบบแขนเปิดอยู่ไหม)"
@@ -176,7 +187,7 @@ class ArmProgram(Node):
         sync = bool(self.get_parameter("sync").value)
         self.get_logger().info(f"เริ่มโปรแกรม '{name}' ({len(steps)} ขั้น)")
 
-        for i, (kind, value) in enumerate(steps, 1):
+        for i, (kind, value, hands) in enumerate(steps, 1):
             if self.stop_flag.is_set():
                 return "stopped"
             if kind == "wait":
@@ -189,7 +200,18 @@ class ArmProgram(Node):
                 continue
 
             self._state(f"running:{name}:{i}/{len(steps)}:" + "/".join(
-                value[arm][0] if arm in value else "-" for arm in self.arms))
+                value[arm][0] if arm in value else "-" for arm in self.arms)
+                + "".join(f" มือ{ARM_TH[arm]} {g}" for arm, g in hands.items()))
+            step_start = time.monotonic()
+            for arm, gesture in hands.items():  # มือขยับพร้อมแขน
+                self.hand_pubs[arm].publish(String(data=gesture))
+            hand_end = step_start + max([programs.HAND_GESTURES[g] for g in hands.values()] or [0.0])
+            if not value:  # ขั้นมืออย่างเดียว
+                self.get_logger().info(f"  ขั้น {i}/{len(steps)}: " + " · ".join(
+                    f"มือ{ARM_TH[arm]} -> {g}" for arm, g in hands.items()))
+                if not self._sleep_until(hand_end):
+                    return "stopped"
+                continue
             starts = {arm: [self.current[j] for j in programs.joint_names(arm, self.layout)] for arm in value}
             plans = {arm: programs.trapezoid(starts[arm], target, speed, accel, min_time)
                      for arm, (_, target) in value.items()}
@@ -200,11 +222,22 @@ class ArmProgram(Node):
             self.get_logger().info(f"  ขั้น {i}/{len(steps)}: " + " · ".join(
                 f"{ARM_TH[arm]} -> '{pose}' "
                 f"{math.degrees(max(abs(t - s) for t, s in zip(target, starts[arm]))):.1f}° "
-                f"{plans[arm][-1][0]:.1f} s" for arm, (pose, target) in value.items()))
+                f"{plans[arm][-1][0]:.1f} s" for arm, (pose, target) in value.items())
+                + "".join(f" · มือ{ARM_TH[arm]} -> {g}" for arm, g in hands.items()))
             err = self._move(plans)
             if err:
                 return err
+            if not self._sleep_until(hand_end):  # แขนถึงก่อนมือทำท่าเสร็จ (เช่นท่าเคลื่อนไหว) — รอมือ
+                return "stopped"
         return "ok"
+
+    def _sleep_until(self, t):
+        """รอถึงเวลา t — คืน False ถ้าโดนสั่งหยุดระหว่างรอ"""
+        while time.monotonic() < t:
+            if self.stop_flag.is_set():
+                return False
+            time.sleep(0.02)
+        return True
 
     def _move(self, plans):
         """ส่งทุกแขนพร้อมกัน แล้วรอจนครบทุกแขน — แขนไหนพังให้หยุดแขนที่เหลือด้วย"""

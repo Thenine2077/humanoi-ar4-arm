@@ -12,7 +12,8 @@
   programs:                     # ทีละขั้น — แต่ละขั้นบอกท่าของแต่ละแขน หรือ still (ไม่สั่งแขนนั้น = ค้างอยู่ที่เดิม)
     pick2:
       - {left: act1, right: act1}
-      - {left: act2, right: still}
+      - {left: act2, right: still, left_hand: rock}   # ท่ามือ (ไม่ใส่ = มือไม่ขยับ) — ขยับพร้อมแขนในขั้นเดียวกัน
+      - {left: still, right: still, left_hand: paper} # มืออย่างเดียว
       - {wait: 1.0}
     demo: [rest, look_left]     # แบบเก่า (ชื่อท่าเปล่าๆ) = แขนซ้ายอย่างเดียว
 
@@ -32,6 +33,11 @@ ARMS = ("left", "right")
 ARM_ALIASES = {"left": "left", "l": "left", "1": "left", "ซ้าย": "left",
                "right": "right", "r": "right", "2": "right", "ขวา": "right"}
 STILL = ("still", "-")
+HAND_KEYS = {"left": "left_hand", "right": "right_hand"}  # มือบนแขนซ้าย / แขนขวา
+# ท่ามือที่สั่งได้ -> เวลาที่มือใช้ (วินาที) ขั้นถัดไปรอจนครบ — ชื่อและท่าจริงอยู่ใน humanoi_games/hand_poses.py
+# (Humanoi repo) แก้คู่กัน · victory / nonono = ท่าเคลื่อนไหว
+HAND_GESTURES = {"rock": 0.6, "paper": 0.6, "scissors": 0.6, "point": 0.6, "like": 0.6, "windup": 0.6,
+                 "fist": 0.6, "victory": 1.8, "nonono": 1.8, "relax": 0.3}
 JOINTS = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
 
 # ขอบเขตข้อต่อ (rad) — ค่าเดียวกับ <ros2_control> ใน ar_dual/urdf/humanoi_arms.urdf.xacro ซึ่งแปลงมาจาก
@@ -151,21 +157,38 @@ def step_arms(step):
         return {"left": step, "right": "still"}
     if isinstance(step, dict) and set(step) == {"wait"}:
         return None
-    if isinstance(step, dict) and step and set(step) <= set(ARMS):
+    if isinstance(step, dict) and step and set(step) <= set(ARMS) | set(HAND_KEYS.values()):
         return {arm: str(step.get(arm, "still")) for arm in ARMS}
-    raise ProgramError(f"ไม่รู้จักขั้น {step!r} (ใช้ {{left: ท่า, right: ท่า|still}} หรือ {{wait: วินาที}})")
+    raise ProgramError(f"ไม่รู้จักขั้น {step!r} (ใช้ {{left: ท่า, right: ท่า|still, left_hand: ท่ามือ}} "
+                       "หรือ {wait: วินาที})")
+
+
+def step_hands(step):
+    """ขั้นในไฟล์ -> {แขน: ท่ามือ} เฉพาะมือที่สั่ง (ไม่มี = มือไม่ขยับ)"""
+    if not isinstance(step, dict):
+        return {}
+    return {arm: str(step[key]) for arm, key in HAND_KEYS.items() if str(step.get(key, "still")) not in STILL}
 
 
 def parse_cli_step(token):
-    """ข้อความหนึ่งขั้นจากคำสั่ง: "ท่าซ้าย/ท่าขวา" (- หรือ still = ไม่สั่ง) หรือ "wait=วินาที" -> ขั้นในไฟล์"""
+    """ข้อความหนึ่งขั้นจากคำสั่ง -> ขั้นในไฟล์
+
+    "ท่าซ้าย/ท่าขวา[/มือซ้าย[/มือขวา]]" (- หรือ still = ไม่สั่ง) หรือ "wait=วินาที"
+    """
     if token.startswith("wait="):
         return {"wait": float(token[5:])}
-    parts = token.split("/")
-    if len(parts) != 2 or not all(p.strip() for p in parts):
-        raise ProgramError(f"'{token}' — แต่ละขั้นเขียน <ท่าแขนซ้าย>/<ท่าแขนขวา> (ใช้ - ถ้าแขนนั้นอยู่นิ่ง) "
-                           "หรือ wait=วินาที")
-    left, right = (p.strip() for p in parts)
-    return {"left": "still" if left in STILL else left, "right": "still" if right in STILL else right}
+    parts = [p.strip() for p in token.split("/")]
+    if not 2 <= len(parts) <= 4 or not all(parts):
+        raise ProgramError(f"'{token}' — แต่ละขั้นเขียน <แขนซ้าย>/<แขนขวา>[/<มือซ้าย>[/<มือขวา>]] "
+                           "(ใช้ - ถ้าไม่ขยับ) หรือ wait=วินาที")
+    step = {"left": "still" if parts[0] in STILL else parts[0], "right": "still" if parts[1] in STILL else parts[1]}
+    for arm, part in zip(ARMS, parts[2:]):
+        if part in STILL:
+            continue
+        if part not in HAND_GESTURES:
+            raise ProgramError(f"'{token}' — ไม่รู้จักท่ามือ '{part}' (มี: {', '.join(HAND_GESTURES)})")
+        step[HAND_KEYS[arm]] = part
+    return step
 
 
 def trapezoid(start, target, speed, accel, min_time=0.0, dt=0.1):
@@ -222,7 +245,7 @@ def _pose(data, arm, name, where):
 
 
 def resolve(data, program, arms=ARMS):
-    """แปลงโปรแกรมเป็นรายการขั้นที่ตรวจแล้ว: [("move", {แขน: (ชื่อท่า, [6 ค่า])}) | ("wait", วินาที)]
+    """แปลงโปรแกรมเป็นรายการขั้นที่ตรวจแล้ว: [("move", {แขน: (ชื่อท่า, [6 ค่า])}, {แขน: ท่ามือ}) | ("wait", วินาที, {})]
 
     arms = แขนที่มีอยู่จริงในระบบที่รัน (ระบบแขนเดี่ยวแบบเดิม = ("left",))
     ตรวจทั้งโปรแกรมก่อนเริ่มขยับ — ถ้ามีท่าที่หาไม่เจอหรือเกินลิมิตแม้แต่ขั้นเดียว จะไม่ขยับเลย
@@ -233,7 +256,7 @@ def resolve(data, program, arms=ARMS):
         arm = arm_of(arm) if arm else "left"
         if arm not in arms:
             raise ProgramError(f"ระบบนี้ไม่มีแขน{arm}")
-        return [("move", {arm: (pose, _pose(data, arm, pose, "goto"))})]
+        return [("move", {arm: (pose, _pose(data, arm, pose, "goto"))}, {})]
     steps = data["programs"].get(program)
     if steps is None:
         known = ", ".join(sorted(data["programs"])) or "(ยังไม่มี)"
@@ -251,8 +274,12 @@ def resolve(data, program, arms=ARMS):
             secs = float(step["wait"])
             if not 0 <= secs <= 600:
                 raise ProgramError(f"{where}: wait ต้องอยู่ระหว่าง 0-600 วินาที")
-            out.append(("wait", secs))
+            out.append(("wait", secs, {}))
             continue
+        hands = step_hands(step)
+        for arm, gesture in hands.items():
+            if gesture not in HAND_GESTURES:
+                raise ProgramError(f"{where}: ไม่รู้จักท่ามือ '{gesture}' (มี: {', '.join(HAND_GESTURES)})")
         moves = {}
         for arm, pose in per_arm.items():
             if pose in STILL:
@@ -260,19 +287,31 @@ def resolve(data, program, arms=ARMS):
             if arm not in arms:
                 raise ProgramError(f"{where}: ระบบที่รันอยู่ไม่มีแขน{'ขวา' if arm == 'right' else 'ซ้าย'}")
             moves[arm] = (pose, _pose(data, arm, pose, where))
-        if not moves:
-            raise ProgramError(f"{where}: ทุกแขน still — ถ้าจะรอให้ใช้ wait=วินาที")
-        out.append(("move", moves))
+        if not moves and not hands:
+            raise ProgramError(f"{where}: ทุกแขนและมือ still — ถ้าจะรอให้ใช้ wait=วินาที")
+        out.append(("move", moves, hands))
     return out
 
 
 def table(data, program):
-    """แถวสำหรับแสดงเป็นตาราง: [(ลำดับ, ช่องแขนซ้าย, ช่องแขนขวา)] — ใช้ทั้ง arm show และ GUI ในอนาคต"""
+    """แถวสำหรับแสดงเป็นตาราง: [(ลำดับ, แขนซ้าย, แขนขวา, มือซ้าย, มือขวา)] — ใช้ทั้ง arm show และ GUI ในอนาคต"""
     rows = []
     for i, step in enumerate(data["programs"].get(program) or [], 1):
         per_arm = step_arms(step)
         if per_arm is None:
-            rows.append((i, f"wait {float(step['wait']):g} s", ""))
+            rows.append((i, f"wait {float(step['wait']):g} s", "", "", ""))
         else:
-            rows.append((i, per_arm["left"], per_arm["right"]))
+            hands = step_hands(step)
+            rows.append((i, per_arm["left"], per_arm["right"], hands.get("left", "-"), hands.get("right", "-")))
     return rows
+
+
+def cli_step(row):
+    """แถวของ table กลับเป็นข้อความแบบที่พิมพ์ในคำสั่ง เช่น act1/-/rock (ตัดช่องท้ายที่เป็น - ทิ้ง)"""
+    _, left, right, lh, rh = row
+    if not right and not lh:
+        return left.replace("wait ", "wait=").replace(" s", "")
+    parts = ["-" if p in STILL else p for p in (left, right, lh, rh)]
+    while len(parts) > 2 and parts[-1] == "-":
+        parts.pop()
+    return "/".join(parts)
