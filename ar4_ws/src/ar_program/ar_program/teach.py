@@ -120,11 +120,14 @@ def main():
             print(f"\nท่าแขน{ARM_TH[arm]} ({len(poses)})   ลำดับ joint_1 .. joint_6")
             for name, vals in poses.items():
                 print(f"  {name:<14} {deg(vals)}")
-        taught = data["hand_poses"]
-        print(f"\nท่ามือที่สอนเอง ({len(taught)})   arm hand-teach · ชื่อซ้ำท่าในตัว = ใช้แทน")
-        for name, vals in taught.items():
-            mark = " (แทนท่าในตัว)" if name in programs.HAND_GESTURES else ""
-            print(f"  {name:<14} [" + ", ".join(f"{v:+.0f}" for v in vals) + f"]{mark}")
+        for side, key in programs.HAND_POSE_KEYS.items():
+            taught = data[key]
+            if not taught and side == "left":
+                continue
+            print(f"\nท่ามือที่สอนเอง ชุดมือ{ARM_TH[side]} ({len(taught)})   arm hand-teach · ชื่อซ้ำท่าในตัว = ใช้แทน")
+            for name, vals in taught.items():
+                mark = " (แทนท่าในตัว)" if name in programs.HAND_GESTURES else ""
+                print(f"  {name:<14} [" + ", ".join(f"{v:+.0f}" for v in vals) + f"]{mark}")
         print(f"\nโปรแกรม ({len(data['programs'])})   ดูทีละขั้นด้วย --show <ชื่อ>")
         for name in data["programs"]:
             shown = " → ".join(programs.cli_step(r) for r in programs.table(data, name))

@@ -17,8 +17,9 @@
       - {wait: 1.0}
     demo: [rest, look_left]     # แบบเก่า (ชื่อท่าเปล่าๆ) = แขนซ้ายอย่างเดียว
 
-  hand_poses:                   # ท่ามือที่สอนเอง (arm hand-teach): องศา servo ID 1-8 ตรงๆ
+  hand_poses:                   # ท่ามือที่สอนเอง (arm hand-teach): องศา servo ID 1-8 ตรงๆ ของชุดมือขวา
     wave: [10, 40, -20, 30, 90, -90, 0, 0]       # ชื่อเดียวกับท่าในตัว (rock paper ...) = ใช้แทนท่าในตัว
+  hand_poses_left: {}           # ของชุดมือซ้าย (มือคนละตัว ประกอบกลับด้าน — องศาใช้แทนกันไม่ได้)
 
   still ไม่ใช่ท่าที่จำตำแหน่งไว้ — แขนจะค้างที่ที่ขั้นก่อนหน้าพาไป ถ้าจำตำแหน่งตอนเขียนโปรแกรม แขนจะวิ่งกลับไปที่นั่น
   ทุกขั้น แขนที่ต้องขยับเริ่มพร้อมกันและถึงพร้อมกัน ขั้นถัดไปเริ่มเมื่อทุกแขนถึงแล้ว
@@ -37,6 +38,8 @@ ARM_ALIASES = {"left": "left", "l": "left", "1": "left", "ซ้าย": "left",
                "right": "right", "r": "right", "2": "right", "ขวา": "right"}
 STILL = ("still", "-")
 HAND_KEYS = {"left": "left_hand", "right": "right_hand"}  # มือบนแขนซ้าย / แขนขวา
+# ท่ามือที่สอนเอง แยกตามชุดมือ (ชุดมือขวา / ชุดมือซ้าย ของ AmazingHand — ไม่เกี่ยวกับว่าติดแขนไหน)
+HAND_POSE_KEYS = {"right": "hand_poses", "left": "hand_poses_left"}
 # ท่ามือที่สั่งได้ -> เวลาที่มือใช้ (วินาที) ขั้นถัดไปรอจนครบ — ชื่อและท่าจริงอยู่ใน humanoi_games/hand_poses.py
 # (Humanoi repo) แก้คู่กัน · victory / nonono = ท่าเคลื่อนไหว
 HAND_GESTURES = {"rock": 0.6, "paper": 0.6, "scissors": 0.6, "point": 0.6, "like": 0.6, "windup": 0.6,
@@ -97,6 +100,7 @@ HEADER = """\
 # programs : ทีละขั้น — {left: ท่า, right: ท่า|still, left_hand: ท่ามือ} หรือ {wait: วินาที}
 #            (ชื่อท่าเปล่าๆ = แขนซ้ายอย่างเดียว)
 # hand_poses: ท่ามือที่สอนเอง (arm hand-teach) องศา servo ID 1-8 — ชื่อซ้ำท่าในตัว = ใช้แทนท่าในตัว
+#             hand_poses = ชุดมือขวา, hand_poses_left = ชุดมือซ้าย (arm hand-side บอกว่าตอนนี้ใส่ตัวไหน)
 # (ไฟล์นี้ถูกเขียนใหม่ทั้งไฟล์ทุกครั้งที่ teach คอมเมนต์ที่เพิ่มเองจะหาย ยกเว้นส่วนหัวนี้)
 
 """
@@ -117,7 +121,8 @@ def load(path):
         poses = {"left": poses}
     data["poses"] = {arm: dict(poses.get(arm) or {}) for arm in ARMS}
     data["programs"] = data.get("programs") or {}
-    data["hand_poses"] = {str(k): [float(v) for v in vals] for k, vals in (data.get("hand_poses") or {}).items()}
+    for key in HAND_POSE_KEYS.values():
+        data[key] = {str(k): [float(v) for v in vals] for k, vals in (data.get(key) or {}).items()}
     return data
 
 
@@ -125,9 +130,14 @@ def save(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     poses = {arm: {k: [round(float(v), 4) for v in vals] for k, vals in data["poses"][arm].items()}
              for arm in ARMS}
-    hand_poses = {k: [round(float(v), 1) for v in vals] for k, vals in (data.get("hand_poses") or {}).items()}
+    out = {"poses": poses}
+    for key in HAND_POSE_KEYS.values():
+        hand_poses = {k: [round(float(v), 1) for v in vals] for k, vals in (data.get(key) or {}).items()}
+        if hand_poses or key == "hand_poses":
+            out[key] = hand_poses
+    out["programs"] = data["programs"]
     body = yaml.safe_dump(
-        {"poses": poses, "hand_poses": hand_poses, "programs": data["programs"]},
+        out,
         allow_unicode=True,
         default_flow_style=None,  # list ของตัวเลข / dict ของขั้น จะเป็นบรรทัดเดียว อ่านง่าย
         sort_keys=False,
@@ -171,8 +181,11 @@ def step_arms(step):
 
 
 def hand_names(data=None):
-    """ชื่อท่ามือที่สั่งได้: ท่าในตัว + ท่าที่สอนเองในไฟล์"""
-    return set(HAND_GESTURES) | set((data or {}).get("hand_poses") or {})
+    """ชื่อท่ามือที่สั่งได้: ท่าในตัว + ท่าที่สอนเองในไฟล์ (มือทั้งสองชุด)"""
+    names = set(HAND_GESTURES)
+    for key in HAND_POSE_KEYS.values():
+        names |= set((data or {}).get(key) or {})
+    return names
 
 
 def hand_duration(name):
