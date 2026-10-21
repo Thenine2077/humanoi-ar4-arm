@@ -126,9 +126,20 @@ def load(path):
     return data
 
 
+def _round_in(joint, v):
+    """ปัด 4 ตำแหน่งแบบไม่ให้หลุดขอบ — ท่าที่สอนชิดขอบพอดี (เช่นข้อ 5 = -1.832596) ปัดแล้วเลยขอบจนเล่นไม่ได้"""
+    lo, hi = LIMITS.get(joint, (-math.inf, math.inf))
+    r = round(float(v), 4)
+    if r < lo:
+        return math.ceil(lo * 1e4) / 1e4
+    if r > hi:
+        return math.floor(hi * 1e4) / 1e4
+    return r
+
+
 def save(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    poses = {arm: {k: [round(float(v), 4) for v in vals] for k, vals in data["poses"][arm].items()}
+    poses = {arm: {k: [_round_in(j, v) for j, v in zip(JOINTS, vals)] for k, vals in data["poses"][arm].items()}
              for arm in ARMS}
     out = {"poses": poses}
     for key in HAND_POSE_KEYS.values():
