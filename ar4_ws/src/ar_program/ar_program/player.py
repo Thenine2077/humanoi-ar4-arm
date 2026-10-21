@@ -205,7 +205,7 @@ class ArmProgram(Node):
             step_start = time.monotonic()
             for arm, gesture in hands.items():  # มือขยับพร้อมแขน
                 self.hand_pubs[arm].publish(String(data=gesture))
-            hand_end = step_start + max([programs.HAND_GESTURES[g] for g in hands.values()] or [0.0])
+            hand_end = step_start + max([programs.hand_duration(g) for g in hands.values()] or [0.0])
             if not value:  # ขั้นมืออย่างเดียว
                 self.get_logger().info(f"  ขั้น {i}/{len(steps)}: " + " · ".join(
                     f"มือ{ARM_TH[arm]} -> {g}" for arm, g in hands.items()))

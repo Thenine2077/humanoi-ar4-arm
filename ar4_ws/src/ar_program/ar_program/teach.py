@@ -80,6 +80,7 @@ def main():
                     help="ตั้งโปรแกรม: ชื่อ ตามด้วยขั้น <ซ้าย>/<ขวา> หรือ wait=วินาที ตามลำดับ")
     ap.add_argument("--delete", metavar="ชื่อท่า")
     ap.add_argument("--delete-program", metavar="ชื่อโปรแกรม")
+    ap.add_argument("--hand-names", action="store_true", help="พิมพ์ชื่อท่ามือที่สั่งได้ (ท่าในตัว + ท่าที่สอนเอง)")
     # ros2 run ส่ง --ros-args มาด้วยบางครั้ง ตัดทิ้งก่อน parse
     argv = sys.argv[1:]
     if "--ros-args" in argv:
@@ -108,6 +109,10 @@ def main():
         except programs.ProgramError as exc:
             sys.exit(str(exc))
 
+    if args.hand_names:
+        print("\n".join(sorted(programs.hand_names(data))))
+        return
+
     if args.list:
         print(f"ไฟล์: {args.file}")
         for arm in programs.ARMS:
@@ -115,6 +120,11 @@ def main():
             print(f"\nท่าแขน{ARM_TH[arm]} ({len(poses)})   ลำดับ joint_1 .. joint_6")
             for name, vals in poses.items():
                 print(f"  {name:<14} {deg(vals)}")
+        taught = data["hand_poses"]
+        print(f"\nท่ามือที่สอนเอง ({len(taught)})   arm hand-teach · ชื่อซ้ำท่าในตัว = ใช้แทน")
+        for name, vals in taught.items():
+            mark = " (แทนท่าในตัว)" if name in programs.HAND_GESTURES else ""
+            print(f"  {name:<14} [" + ", ".join(f"{v:+.0f}" for v in vals) + f"]{mark}")
         print(f"\nโปรแกรม ({len(data['programs'])})   ดูทีละขั้นด้วย --show <ชื่อ>")
         for name in data["programs"]:
             shown = " → ".join(programs.cli_step(r) for r in programs.table(data, name))
@@ -155,7 +165,7 @@ def main():
             if args.layout == "single":  # แขนเดี่ยว: ชื่อท่าเปล่าๆ แบบเดิม
                 steps = [{"wait": float(t[5:])} if t.startswith("wait=") else t for t in args.program[1:]]
             else:
-                steps = [programs.parse_cli_step(t) for t in args.program[1:]]
+                steps = [programs.parse_cli_step(t, programs.hand_names(data)) for t in args.program[1:]]
             data["programs"][name] = steps
             resolved = programs.resolve(data, name)  # ตรวจก่อนบันทึก
         except (programs.ProgramError, ValueError) as exc:

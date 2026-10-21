@@ -17,6 +17,9 @@
       - {wait: 1.0}
     demo: [rest, look_left]     # แบบเก่า (ชื่อท่าเปล่าๆ) = แขนซ้ายอย่างเดียว
 
+  hand_poses:                   # ท่ามือที่สอนเอง (arm hand-teach): องศา servo ID 1-8 ตรงๆ
+    wave: [10, 40, -20, 30, 90, -90, 0, 0]       # ชื่อเดียวกับท่าในตัว (rock paper ...) = ใช้แทนท่าในตัว
+
   still ไม่ใช่ท่าที่จำตำแหน่งไว้ — แขนจะค้างที่ที่ขั้นก่อนหน้าพาไป ถ้าจำตำแหน่งตอนเขียนโปรแกรม แขนจะวิ่งกลับไปที่นั่น
   ทุกขั้น แขนที่ต้องขยับเริ่มพร้อมกันและถึงพร้อมกัน ขั้นถัดไปเริ่มเมื่อทุกแขนถึงแล้ว
   ไฟล์แบบเก่า (poses เป็นท่าแขนเดียว) อ่านได้ — ถือเป็นท่าแขนซ้าย แล้วเขียนกลับเป็นแบบใหม่ตอนบันทึกครั้งถัดไป
@@ -91,7 +94,9 @@ HEADER = """\
 #   arm show <ชื่อโปรแกรม>                                 ดูเป็นตาราง
 #
 # poses    : แยกตามแขน มุม joint_1..joint_6 หน่วยเรเดียน
-# programs : ทีละขั้น — {left: ท่า, right: ท่า|still} หรือ {wait: วินาที} (ชื่อท่าเปล่าๆ = แขนซ้ายอย่างเดียว)
+# programs : ทีละขั้น — {left: ท่า, right: ท่า|still, left_hand: ท่ามือ} หรือ {wait: วินาที}
+#            (ชื่อท่าเปล่าๆ = แขนซ้ายอย่างเดียว)
+# hand_poses: ท่ามือที่สอนเอง (arm hand-teach) องศา servo ID 1-8 — ชื่อซ้ำท่าในตัว = ใช้แทนท่าในตัว
 # (ไฟล์นี้ถูกเขียนใหม่ทั้งไฟล์ทุกครั้งที่ teach คอมเมนต์ที่เพิ่มเองจะหาย ยกเว้นส่วนหัวนี้)
 
 """
@@ -112,6 +117,7 @@ def load(path):
         poses = {"left": poses}
     data["poses"] = {arm: dict(poses.get(arm) or {}) for arm in ARMS}
     data["programs"] = data.get("programs") or {}
+    data["hand_poses"] = {str(k): [float(v) for v in vals] for k, vals in (data.get("hand_poses") or {}).items()}
     return data
 
 
@@ -119,8 +125,9 @@ def save(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     poses = {arm: {k: [round(float(v), 4) for v in vals] for k, vals in data["poses"][arm].items()}
              for arm in ARMS}
+    hand_poses = {k: [round(float(v), 1) for v in vals] for k, vals in (data.get("hand_poses") or {}).items()}
     body = yaml.safe_dump(
-        {"poses": poses, "programs": data["programs"]},
+        {"poses": poses, "hand_poses": hand_poses, "programs": data["programs"]},
         allow_unicode=True,
         default_flow_style=None,  # list ของตัวเลข / dict ของขั้น จะเป็นบรรทัดเดียว อ่านง่าย
         sort_keys=False,
@@ -163,6 +170,16 @@ def step_arms(step):
                        "หรือ {wait: วินาที})")
 
 
+def hand_names(data=None):
+    """ชื่อท่ามือที่สั่งได้: ท่าในตัว + ท่าที่สอนเองในไฟล์"""
+    return set(HAND_GESTURES) | set((data or {}).get("hand_poses") or {})
+
+
+def hand_duration(name):
+    """เวลาที่มือใช้ทำท่า (วินาที) — ท่าที่สอนเองเป็นท่านิ่ง"""
+    return HAND_GESTURES.get(name, 0.6)
+
+
 def step_hands(step):
     """ขั้นในไฟล์ -> {แขน: ท่ามือ} เฉพาะมือที่สั่ง (ไม่มี = มือไม่ขยับ)"""
     if not isinstance(step, dict):
@@ -170,8 +187,8 @@ def step_hands(step):
     return {arm: str(step[key]) for arm, key in HAND_KEYS.items() if str(step.get(key, "still")) not in STILL}
 
 
-def parse_cli_step(token):
-    """ข้อความหนึ่งขั้นจากคำสั่ง -> ขั้นในไฟล์
+def parse_cli_step(token, hands=None):
+    """ข้อความหนึ่งขั้นจากคำสั่ง -> ขั้นในไฟล์ (hands = ชื่อท่ามือที่รับได้ ไม่ใส่ = ท่าในตัว)
 
     "ท่าซ้าย/ท่าขวา[/มือซ้าย[/มือขวา]]" (- หรือ still = ไม่สั่ง) หรือ "wait=วินาที"
     """
@@ -185,8 +202,9 @@ def parse_cli_step(token):
     for arm, part in zip(ARMS, parts[2:]):
         if part in STILL:
             continue
-        if part not in HAND_GESTURES:
-            raise ProgramError(f"'{token}' — ไม่รู้จักท่ามือ '{part}' (มี: {', '.join(HAND_GESTURES)})")
+        known = hands if hands is not None else HAND_GESTURES
+        if part not in known:
+            raise ProgramError(f"'{token}' — ไม่รู้จักท่ามือ '{part}' (มี: {', '.join(sorted(known))})")
         step[HAND_KEYS[arm]] = part
     return step
 
@@ -278,8 +296,8 @@ def resolve(data, program, arms=ARMS):
             continue
         hands = step_hands(step)
         for arm, gesture in hands.items():
-            if gesture not in HAND_GESTURES:
-                raise ProgramError(f"{where}: ไม่รู้จักท่ามือ '{gesture}' (มี: {', '.join(HAND_GESTURES)})")
+            if gesture not in hand_names(data):
+                raise ProgramError(f"{where}: ไม่รู้จักท่ามือ '{gesture}' (มี: {', '.join(sorted(hand_names(data)))})")
         moves = {}
         for arm, pose in per_arm.items():
             if pose in STILL:
