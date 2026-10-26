@@ -9,7 +9,7 @@
     which is not available on ROS 2 Jazzy.
   </description>
   <license>MIT</license>
-  <maintainer email="sale2@eitlaser.com">User</maintainer>
+  <maintainer email="nayzalovehrk@gmail.com">User</maintainer>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 

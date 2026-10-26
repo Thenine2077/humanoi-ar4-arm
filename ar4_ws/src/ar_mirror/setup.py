@@ -18,7 +18,7 @@ setup(
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="User",
-    maintainer_email="sale2@eitlaser.com",
+    maintainer_email="nayzalovehrk@gmail.com",
     description="Mirrors sim joint states onto the real AR4 arm so both move together",
     license="MIT",
     tests_require=["pytest"],

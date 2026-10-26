@@ -18,7 +18,7 @@ setup(
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="User",
-    maintainer_email="sale2@eitlaser.com",
+    maintainer_email="nayzalovehrk@gmail.com",
     description="Pre-programmed AR4 motions triggered over ROS 2",
     license="MIT",
     entry_points={

@@ -9,7 +9,7 @@
     receives a program name on /arm/run, and reports back on /arm/done.
   </description>
   <license>MIT</license>
-  <maintainer email="sale2@eitlaser.com">User</maintainer>
+  <maintainer email="nayzalovehrk@gmail.com">User</maintainer>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
