@@ -46,8 +46,9 @@ HAND_GESTURES = {"rock": 0.6, "paper": 0.6, "scissors": 0.6, "point": 0.6, "like
                  "fist": 0.6, "victory": 1.8, "nonono": 1.8, "relax": 0.3}
 JOINTS = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
 
-# ขอบเขตข้อต่อ (rad) — ค่าเดียวกับ <ros2_control> ใน ar_dual/urdf/humanoi_arms.urdf.xacro ซึ่งแปลงมาจาก
-# ar.ros2_control.xacro ของผู้ขาย ตรวจทุกท่าก่อนสั่งแขน กันไฟล์ที่พิมพ์ผิดสั่งชนลิมิต (สองแขนเหมือนกัน)
+# ขอบเขตข้อต่อ (rad) — ค่าเดียวกับ <ros2_control> ใน ar_dual/urdf/arm_control.xacro ซึ่งแปลงมาจาก
+# ar.ros2_control.xacro ของผู้ขาย ตรวจทุกท่าก่อนสั่งแขน กันไฟล์ที่พิมพ์ผิดสั่งชนลิมิต
+# แต่ละแขนเลื่อนตามค่าชดเชยศูนย์ในบอร์ด (ar_dual/config/zero_trims.yaml) — ใช้ limits(แขน) ไม่ใช้ LIMITS ตรงๆ
 LIMITS = {
     "joint_1": (-2.967060, 2.967060),
     "joint_2": (-0.733038, 1.570796),
@@ -56,6 +57,32 @@ LIMITS = {
     "joint_5": (-1.832596, 1.832596),
     "joint_6": (-2.705260, 2.705260),
 }
+
+
+_TRIMS = None
+
+
+def zero_trims():
+    """ค่าชดเชยศูนย์ในบอร์ดของแต่ละแขน (องศา) จาก ar_dual/config/zero_trims.yaml — ไม่มีแพ็กเกจ ar_dual = 0 ทุกข้อ"""
+    global _TRIMS
+    if _TRIMS is None:
+        try:
+            from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
+            path = os.path.join(get_package_share_directory("ar_dual"), "config", "zero_trims.yaml")
+        except (ImportError, PackageNotFoundError):
+            path = None
+        trims = {}
+        if path:  # มีแพ็กเกจแต่อ่านไฟล์ไม่ได้ = ให้พังดังๆ (ลิมิตผิดฝั่งอาจสั่งแขนเลยสวิตช์)
+            with open(path, encoding="utf-8") as f:
+                trims = yaml.safe_load(f) or {}
+        _TRIMS = {arm: [float(v) for v in trims.get(arm, [0] * len(JOINTS))] for arm in ARMS}
+    return _TRIMS
+
+
+def limits(arm=None):
+    """ขอบเขตข้อต่อ (rad) ของแขนนั้น = LIMITS เลื่อนตามค่าชดเชยศูนย์ในบอร์ด (arm=None = ไม่เลื่อน)"""
+    trims = zero_trims().get(arm, [0.0] * len(JOINTS)) if arm else [0.0] * len(JOINTS)
+    return {j: (LIMITS[j][0] + math.radians(t), LIMITS[j][1] + math.radians(t)) for j, t in zip(JOINTS, trims)}
 
 
 def joint_names(arm, layout="dual"):
@@ -126,9 +153,9 @@ def load(path):
     return data
 
 
-def _round_in(joint, v):
+def _round_in(joint, v, arm=None):
     """ปัด 4 ตำแหน่งแบบไม่ให้หลุดขอบ — ท่าที่สอนชิดขอบพอดี (เช่นข้อ 5 = -1.832596) ปัดแล้วเลยขอบจนเล่นไม่ได้"""
-    lo, hi = LIMITS.get(joint, (-math.inf, math.inf))
+    lo, hi = limits(arm).get(joint, (-math.inf, math.inf))
     r = round(float(v), 4)
     if r < lo:
         return math.ceil(lo * 1e4) / 1e4
@@ -139,7 +166,7 @@ def _round_in(joint, v):
 
 def save(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    poses = {arm: {k: [_round_in(j, v) for j, v in zip(JOINTS, vals)] for k, vals in data["poses"][arm].items()}
+    poses = {arm: {k: [_round_in(j, v, arm) for j, v in zip(JOINTS, vals)] for k, vals in data["poses"][arm].items()}
              for arm in ARMS}
     out = {"poses": poses}
     for key in HAND_POSE_KEYS.values():
@@ -159,8 +186,8 @@ def save(path, data):
     os.replace(tmp, path)  # เขียนไฟล์ชั่วคราวก่อนแล้วสลับ กันไฟล์พังถ้าโปรแกรมหยุดกลางทาง
 
 
-def check_pose(name, values):
-    """คืน list มุม 6 ค่าถ้าใช้ได้ ไม่งั้น raise ProgramError พร้อมเหตุผล"""
+def check_pose(name, values, arm=None):
+    """คืน list มุม 6 ค่าถ้าใช้ได้ ไม่งั้น raise ProgramError พร้อมเหตุผล (arm = ใช้ลิมิตของแขนนั้น)"""
     if not isinstance(values, (list, tuple)) or len(values) != len(JOINTS):
         raise ProgramError(f"ท่า '{name}' ต้องมี {len(JOINTS)} ค่า (joint_1..joint_6)")
     out = []
@@ -169,7 +196,7 @@ def check_pose(name, values):
             v = float(v)
         except (TypeError, ValueError):
             raise ProgramError(f"ท่า '{name}' {joint} ไม่ใช่ตัวเลข: {v!r}")
-        lo, hi = LIMITS[joint]
+        lo, hi = limits(arm)[joint]
         if not lo <= v <= hi:
             raise ProgramError(
                 f"ท่า '{name}' {joint} = {v:.3f} rad ({math.degrees(v):.1f}°) "
@@ -283,7 +310,7 @@ def _pose(data, arm, name, where):
     if name not in data["poses"][arm]:
         known = ", ".join(sorted(data["poses"][arm])) or "(ยังไม่มี)"
         raise ProgramError(f"{where}: แขน{'ซ้าย' if arm == 'left' else 'ขวา'}ไม่มีท่า '{name}' — ที่มี: {known}")
-    return check_pose(f"{arm}:{name}", data["poses"][arm][name])
+    return check_pose(f"{arm}:{name}", data["poses"][arm][name], arm)
 
 
 def resolve(data, program, arms=ARMS):

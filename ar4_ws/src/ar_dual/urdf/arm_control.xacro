@@ -3,6 +3,7 @@
   hw = real (Teensy ผ่านไดรเวอร์ของผู้ขาย) | mock (จำลอง ไม่ต่อบอร์ด) | gz (Gazebo ผ่าน gz_ros2_control)
   ลิมิตเป็นตัวเลขจริง (ไฟล์ของผู้ขายเขียน {..} ไม่มี $ จึง parse ไม่ผ่าน)
   initial_value = ท่าพักหลัง calibrate (ใช้ตอน mock / ซิม)
+  ลิมิต / ท่าพัก = ค่าของผู้ขาย + ค่าชดเชยศูนย์ในบอร์ด (config/zero_trims.yaml) ของแขนนั้น
 -->
 <robot xmlns:xacro="http://wiki.ros.org/xacro">
   <xacro:macro name="arm_joint" params="name lo hi init">
@@ -18,6 +19,11 @@
   </xacro:macro>
 
   <xacro:macro name="arm_control" params="prefix hw port:=none">
+    <!-- ค่าชดเชยศูนย์ในบอร์ดของแขนนี้ (ar_dual/config/zero_trims.yaml) — ลิมิตและท่าพักเลื่อนตาม -->
+    <xacro:property name="zcfg" value="${xacro.load_yaml('$(find ar_dual)/config/zero_trims.yaml')}"/>
+    <xacro:property name="zt" value="${[float(v) for v in zcfg.get(prefix[:-1], [0] * 6)]}"/>
+    <!-- ท่าหลัง calibrate (after_calibrate มุมจริง องศา) แทนท่าพักของเฟิร์มแวร์ ในข้อที่กำหนด -->
+    <xacro:property name="ac" value="${dict((int(k), float(v)) for k, v in ((zcfg.get('after_calibrate') or dict()).get(prefix[:-1]) or dict()).items())}"/>
     <ros2_control name="${prefix}arm" type="system">
       <hardware>
         <xacro:if value="${hw == 'real'}">
@@ -34,12 +40,12 @@
           <param name="position_proportional_gain">20.0</param>
         </xacro:if>
       </hardware>
-      <xacro:arm_joint name="${prefix}joint_1" lo="-170" hi="170" init="0.0"/>
-      <xacro:arm_joint name="${prefix}joint_2" lo="-42" hi="90" init="-0.1019"/>
-      <xacro:arm_joint name="${prefix}joint_3" lo="-89" hi="52" init="0.0"/>
-      <xacro:arm_joint name="${prefix}joint_4" lo="-165" hi="165" init="0.0"/>
-      <xacro:arm_joint name="${prefix}joint_5" lo="-105" hi="105" init="-0.9103"/>
-      <xacro:arm_joint name="${prefix}joint_6" lo="-155" hi="155" init="0.0"/>
+      <xacro:arm_joint name="${prefix}joint_1" lo="${-170 + zt[0]}" hi="${170 + zt[0]}" init="${ac[1] * pi / 180 if 1 in ac else 0.0 + zt[0] * pi / 180}"/>
+      <xacro:arm_joint name="${prefix}joint_2" lo="${-42 + zt[1]}" hi="${90 + zt[1]}" init="${ac[2] * pi / 180 if 2 in ac else -0.1019 + zt[1] * pi / 180}"/>
+      <xacro:arm_joint name="${prefix}joint_3" lo="${-89 + zt[2]}" hi="${52 + zt[2]}" init="${ac[3] * pi / 180 if 3 in ac else 0.0 + zt[2] * pi / 180}"/>
+      <xacro:arm_joint name="${prefix}joint_4" lo="${-165 + zt[3]}" hi="${165 + zt[3]}" init="${ac[4] * pi / 180 if 4 in ac else 0.0 + zt[3] * pi / 180}"/>
+      <xacro:arm_joint name="${prefix}joint_5" lo="${-105 + zt[4]}" hi="${105 + zt[4]}" init="${ac[5] * pi / 180 if 5 in ac else -0.9103 + zt[4] * pi / 180}"/>
+      <xacro:arm_joint name="${prefix}joint_6" lo="${-155 + zt[5]}" hi="${155 + zt[5]}" init="${ac[6] * pi / 180 if 6 in ac else 0.0 + zt[5] * pi / 180}"/>
     </ros2_control>
   </xacro:macro>
 </robot>

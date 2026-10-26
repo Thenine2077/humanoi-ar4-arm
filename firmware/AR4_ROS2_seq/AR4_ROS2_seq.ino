@@ -1,4 +1,4 @@
-// Humanoi AR4_ROS2_seq v2 — สำเนาของ AR4_ROS2.ino (เฟิร์มแวร์ ROS ของผู้ขาย ต้นฉบับไม่แก้ อยู่ที่ C:\ar4_fw\AR4_ROS2)
+// Humanoi AR4_ROS2_seq v3 — สำเนาของ AR4_ROS2.ino (เฟิร์มแวร์ ROS ของผู้ขาย ต้นฉบับไม่แก้ อยู่ที่ C:\ar4_fw\AR4_ROS2)
 // ต่างจากต้นฉบับ:
 //  1. JC เลือกข้อต่อได้ (JC5, JC456 ...) ข้ออื่นไม่ขยับ — ต้นฉบับทำ 6 ข้อพร้อมกัน มือที่ติดปลายแขนไปชน (2026-10-16)
 //  2. calibrate ไม่ติดไม่รู้จบ: ข้อที่หมุนเกินระยะเต็ม (+15%) แล้วยังไม่เจอสวิตช์ จะหยุดและรายงาน DB J<n> FAIL
@@ -6,14 +6,17 @@
 //  3. เก็บ "ชื่อแขน" (JN) และ "ข้อที่มอเตอร์หมุนกลับด้าน" (JD) ไว้ใน EEPROM ของบอร์ด — Teensy สองแขนรายงาน
 //     หมายเลข USB ซ้ำกัน ระบบจึงถามชื่อจากบอร์ดเพื่อหาว่าพอร์ตไหนคือแขนไหน (ย้ายพอร์ตได้) · แขนที่ประกอบข้อใด
 //     กลับด้านตั้ง JD ได้โดยไม่ต้องคอมไพล์ใหม่
-//  คำสั่งเพิ่ม: JV -> "JVseq2" · JN / JN=<ชื่อ> · JD / JD=<6 หลัก 0|1 ของ J1..J6>
+//  4. (v3) ค่าชดเชยศูนย์ข้อต่อ (JZ) เก็บใน EEPROM: มุมที่รายงาน (JP / ตอบ MT) = มุมที่นับได้ + ค่าชดเชย และมุมที่สั่ง (MT)
+//     ลบค่าชดเชยออกก่อนหมุน -> ตัวเลขในโปรแกรมเป็นมุมจริงที่วัดด้วยระดับน้ำ · calibrate / ท่าพัก / ระยะหมุนจริงไม่เปลี่ยน
+//     (เดิมมุมที่นับได้ของข้อ 5 แขนซ้ายคลาดจากจริง −19° — 2026-10-26)
+//  คำสั่งเพิ่ม: JV -> "JVseq3" · JN / JN=<ชื่อ> · JD / JD=<6 หลัก 0|1 ของ J1..J6> · JZ / JZ=<6 ค่า องศา คั่นด้วย ,>
 //  คำสั่งอื่น (ST MT JP SS) และ JC เปล่าทำงานเหมือนต้นฉบับ
 
 #include <AccelStepper.h>
 #include <Encoder.h>
 #include <avr/pgmspace.h> // 用于访问程序空间的库
 #include <math.h> // 提供数学函数的库
-#include <EEPROM.h> // Humanoi: ชื่อแขน + ทิศมอเตอร์ ที่เก็บในบอร์ด
+#include <EEPROM.h> // Humanoi: ชื่อแขน + ทิศมอเตอร์ + ค่าชดเชยศูนย์ ที่เก็บในบอร์ด
 
 // 固件版本
 const char* VERSION = "0.0.1";
@@ -87,9 +90,13 @@ int ENC_RANGE_STEPS[NUM_JOINTS];
 
 // ---------- Humanoi: ค่าที่เก็บในบอร์ด (EEPROM) ----------
 // [0..3] "HUM2"  [4] บิตข้อที่มอเตอร์หมุนกลับด้าน (bit0 = J1)  [8..39] ชื่อแขน (จบด้วย 0)
-const int EE_MAGIC = 0, EE_DIRMASK = 4, EE_NAME = 8, NAME_LEN = 32;
+// [40..51] ค่าชดเชยศูนย์ J1..J6 (int16 หน่วย 0.01°)  [52..53] "Z1" = มีค่าชดเชย (บอร์ด v2 เดิมไม่มี -> 0 ทุกข้อ)
+// ยังใช้ "HUM2" เหมือน v2 — ย้อนไปลง v2 แล้วชื่อแขน/ทิศมอเตอร์ไม่หาย
+const int EE_MAGIC = 0, EE_DIRMASK = 4, EE_NAME = 8, NAME_LEN = 32, EE_ZERO = 40, EE_ZERO_MARK = 52;
+const float ZERO_MAX_DEG = 45.0;
 uint8_t dirMask = 0;
 char armName[NAME_LEN] = "";
+float zeroTrim[6] = {0, 0, 0, 0, 0, 0};  // องศา: มุมที่รายงาน = มุมที่นับ + zeroTrim
 // ทิศ DIR ตั้งต้นของต้นฉบับ: ทุกข้อกลับ (DM542T) ยกเว้น J4 (DM320T)
 const bool DEFAULT_DIR_INVERT[] = {true, true, true, false, true, true};
 
@@ -103,6 +110,13 @@ void loadSettings() {
     dirMask = 0;
     armName[0] = 0;
   }
+  for (int i = 0; i < 6; ++i) zeroTrim[i] = 0;
+  if (EEPROM.read(EE_ZERO_MARK) == 'Z' && EEPROM.read(EE_ZERO_MARK + 1) == '1') {
+    for (int i = 0; i < 6; ++i) {
+      int16_t c = (int16_t)(EEPROM.read(EE_ZERO + 2 * i) | (EEPROM.read(EE_ZERO + 2 * i + 1) << 8));
+      zeroTrim[i] = c / 100.0;
+    }
+  }
 }
 
 void saveSettings() {
@@ -110,6 +124,21 @@ void saveSettings() {
   EEPROM.write(EE_MAGIC + 2, 'M'); EEPROM.write(EE_MAGIC + 3, '2');
   EEPROM.write(EE_DIRMASK, dirMask);
   for (int k = 0; k < NAME_LEN; ++k) EEPROM.write(EE_NAME + k, armName[k]);
+  for (int i = 0; i < 6; ++i) {
+    int16_t c = (int16_t)lroundf(zeroTrim[i] * 100.0);
+    EEPROM.write(EE_ZERO + 2 * i, c & 0xFF);
+    EEPROM.write(EE_ZERO + 2 * i + 1, (c >> 8) & 0xFF);
+  }
+  EEPROM.write(EE_ZERO_MARK, 'Z'); EEPROM.write(EE_ZERO_MARK + 1, '1');
+}
+
+String zeroTrimString() {
+  String z = "";
+  for (int i = 0; i < 6; ++i) {
+    if (i) z += ',';
+    z += String(zeroTrim[i], 2);
+  }
+  return z;
 }
 
 void applyDirections() {
@@ -164,13 +193,13 @@ void readMotorSteps(int* motorSteps) {
 
 void encStepsToJointPos(int* encSteps, double* jointPos) {
   for (int i = 0; i < NUM_JOINTS; ++i) {
-    jointPos[i] = encSteps[i] / MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i];
+    jointPos[i] = encSteps[i] / MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i] + zeroTrim[i];  // Humanoi: + ค่าชดเชยศูนย์
   }
 }
 
 void jointPosToEncSteps(double* jointPos, int* encSteps) {
   for (int i = 0; i < NUM_JOINTS; ++i) {
-    encSteps[i] = jointPos[i] * MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i];
+    encSteps[i] = (jointPos[i] - zeroTrim[i]) * MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i];  // Humanoi: − ค่าชดเชยศูนย์
   }
 }
 
@@ -482,7 +511,7 @@ void stateTRAJ() {
       } else if (function == "JV") {
         // Humanoi: บอกว่าเป็นฉบับนี้ — ar_calibrate.py / ar_ports.py เช็กก่อนส่ง JC5, JN ฯลฯ
         // (ต้นฉบับไม่ตอบ JV และจะ calibrate ทั้ง 6 ข้อถ้าได้ JC5 — ห้ามส่งให้ต้นฉบับ)
-        Serial.println("JVseq2");
+        Serial.println("JVseq3");
       } else if (function == "JN") {
         // Humanoi: ชื่อแขน "JN" = ถาม, "JN=left" = ตั้ง (เก็บใน EEPROM)
         String arg = inData.substring(2);
@@ -508,6 +537,34 @@ void stateTRAJ() {
           applyDirections();
         }
         Serial.println(String("JD") + dirMaskString());
+      } else if (function == "JZ") {
+        // Humanoi: ค่าชดเชยศูนย์ "JZ" = ถาม, "JZ=0,0,0,0,19,0" = ตั้ง (องศา J1..J6 ไม่เกิน ±45) เก็บใน EEPROM
+        // มีผลทันทีกับตัวเลขที่รายงาน/รับ — ตั้งตอนระบบ ROS ปิดอยู่เท่านั้น (ไม่งั้นตำแหน่งที่ ROS เห็นกระโดด)
+        String arg = inData.substring(2);
+        arg.trim();
+        if (arg.startsWith("=")) {
+          float v[6];
+          int n = 0, start = 1;
+          bool ok = true;
+          for (unsigned int k = 1; k <= arg.length() && ok; ++k) {
+            if (k == arg.length() || arg.charAt(k) == ',') {
+              String t = arg.substring(start, k);
+              t.trim();
+              if (n >= 6 || t.length() == 0) { ok = false; break; }
+              v[n] = t.toFloat();
+              if (fabs(v[n]) > ZERO_MAX_DEG) ok = false;
+              ++n;
+              start = k + 1;
+            }
+          }
+          if (ok && n == 6) {
+            for (int i = 0; i < 6; ++i) zeroTrim[i] = v[i];
+            saveSettings();
+          } else {
+            Serial.println("DB JZ ignored - need 6 values within +-45 deg, e.g. JZ=0,0,0,0,19,0");
+          }
+        }
+        Serial.println(String("JZ") + zeroTrimString());
       } else if (function == "ST") {
         // 初始化轨迹规划状态
         if (!initStateTraj(inData)) {

@@ -5,7 +5,11 @@
   ar_calibrate.py <พอร์ต Teensy> 5               # ข้อเดียว (ไว้ไล่ดูว่าข้อไหนพามือไปชน)
   ar_calibrate.py <พอร์ต Teensy> 456 123         # กลุ่มละหลายข้อพร้อมกัน
   ar_calibrate.py <พอร์ต Teensy> all             # 6 ข้อพร้อมกันแบบต้นฉบับ (มือที่ติดปลายแขนอาจชน)
-  (arm calibrate left|right ... เรียกตัวนี้ให้)
+  ar_calibrate.py <พอร์ต Teensy> --arm left 6 5 4 1 2 3   # + หลังเสร็จหมุนข้อไปท่าใน after_calibrate
+  (arm calibrate left|right ... เรียกตัวนี้ให้ พร้อม --arm)
+
+หลัง calibrate: ข้อที่เพิ่ง calibrate และมีใน after_calibrate ของ config/zero_trims.yaml (มุมจริง องศา เช่น
+left: {5: 0} = ข้อ 5 ตรง) จะหมุนไปมุมนั้นต่อ — ท่าพักของเฟิร์มแวร์ (ต้นฉบับ) ข้อ 5 งออยู่ ใช้ดูยาก
   บน Windows ใช้ชื่อ COM ได้ตรงๆ:  python ar_calibrate.py COM9 6 5 4 1 2 3   (ต้องมี pyserial)
 
 เลือกข้อได้ต้องใช้เฟิร์มแวร์ AR4_ROS2_seq (C:\\ar4_fw\\AR4_ROS2_seq) — ตัวนี้ถาม JV ก่อน ต้นฉบับไม่ตอบ JV และ
@@ -16,12 +20,59 @@
 เฟิร์มแวร์ตอบ JP ได้ก็ต่อเมื่อ calibrate กลุ่มนั้นเสร็จแล้ว — Teensy ไม่รีเซ็ตตอน USB หลุด จึงทำต่อจนจบเอง
 """
 import os
+import re
 import sys
 import time
 
 import serial
+import yaml
 
 TIMEOUT = 300  # วินาที ต่อกลุ่ม — ทั้ง 6 ข้อพร้อมกันปกติ ~2 นาที
+# มุม ROS = มุมที่บอร์ดรายงาน + ค่านี้ (joint_offsets_ ในไดรเวอร์ของผู้ขาย ar_hardware_interface.cpp)
+DRIVER_OFFSETS = [170.0, -42.0, -89.0, -165.0, -105.0, -155.0]
+AXES = "ABCDEF"
+
+
+def after_calibrate(arm):
+    """{ข้อ 0-5: มุมจริง องศา} จาก after_calibrate ใน config/zero_trims.yaml ของแขนนั้น"""
+    try:
+        from ament_index_python.packages import get_package_share_directory
+        path = os.path.join(get_package_share_directory("ar_dual"), "config", "zero_trims.yaml")
+    except Exception:  # รันนอก ROS — อ่านจากโฟลเดอร์ต้นฉบับข้างสคริปต์
+        path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "config", "zero_trims.yaml")
+    with open(path, encoding="utf-8") as f:
+        pose = ((yaml.safe_load(f) or {}).get("after_calibrate") or {}).get(arm) or {}
+    return {int(j) - 1: float(v) for j, v in pose.items()}
+
+
+def board_joints(ser):
+    """มุมที่บอร์ดรายงาน J1..J6 (องศา ก่อนบวก DRIVER_OFFSETS) — None ถ้าไม่ตอบ"""
+    vals = dict(re.findall(r"([A-F])(-?[0-9.]+)", ask(ser, b"JP\n", "JP")))
+    return [float(vals[a]) for a in AXES] if len(vals) == 6 else None
+
+
+def go_after_calibrate(ser, arm, calibrated):
+    """หมุนข้อที่เพิ่ง calibrate ไปท่าใน after_calibrate (ทีละข้อ ความเร็วตั้งต้นของเฟิร์มแวร์ 30°/s)"""
+    for j, deg in sorted(after_calibrate(arm).items()):
+        if str(j + 1) not in calibrated:
+            continue
+        now = board_joints(ser)
+        if now is None:
+            print(f"✗ บอร์ดไม่ตอบ JP — ไม่หมุนข้อ {j + 1} ไปท่าหลัง calibrate", flush=True)
+            return
+        target = list(now)
+        target[j] = deg - DRIVER_OFFSETS[j]
+        print(f"→ ข้อ {j + 1} ไป {deg:+.1f}° (มุมจริง) ...", flush=True)
+        ask(ser, ("MT" + "".join(f"{a}{v:.6f}" for a, v in zip(AXES, target)) + "\n").encode(), "JP")
+        t_end = time.monotonic() + 30
+        while time.monotonic() < t_end:
+            time.sleep(0.2)
+            now = board_joints(ser)
+            if now and abs(now[j] - target[j]) < 0.3:
+                print(f"  ข้อ {j + 1} ถึงแล้ว ({now[j] + DRIVER_OFFSETS[j]:+.1f}°)", flush=True)
+                break
+        else:
+            print(f"✗ ข้อ {j + 1} ไม่ถึงเป้าใน 30 วินาที — ดูว่าติดอะไรไหม", flush=True)
 
 
 def open_port(path, wait=60):
@@ -91,9 +142,17 @@ def calibrate_group(ser, path, group):
 
 
 def main():
-    if len(sys.argv) < 3:
+    argv = sys.argv[1:]
+    arm = None
+    if "--arm" in argv:
+        i = argv.index("--arm")
+        arm = argv[i + 1] if i + 1 < len(argv) else ""
+        if arm not in ("left", "right"):
+            sys.exit("--arm ต้องเป็น left หรือ right")
+        del argv[i:i + 2]
+    if len(argv) < 2:
         sys.exit(__doc__)
-    path, specs = sys.argv[1], sys.argv[2:]
+    path, specs = argv[0], argv[1:]
     if specs == ["all"]:
         groups = [""]
     else:
@@ -117,11 +176,11 @@ def main():
     if not ask(ser, b"JP\n", "JP"):
         sys.exit(f"Teensy ที่ {path} ไม่ตอบแบบเฟิร์มแวร์ ROS — ไม่ calibrate")
     fw = ask(ser, b"JV\n", "JV")
-    if groups != [""] and fw not in ("JVseq1", "JVseq2"):
+    if groups != [""] and fw not in ("JVseq1", "JVseq2", "JVseq3"):
         sys.exit("เฟิร์มแวร์บนบอร์ดนี้เป็นต้นฉบับ (เลือกข้อไม่ได้ — JC5 จะหมุนทั้ง 6 ข้อ) — แฟลช AR4_ROS2_seq ก่อน "
                  "หรือใช้ all ถ้ายอมให้หมุนพร้อมกัน")
-    if fw != "JVseq2":
-        print("หมายเหตุ: เฟิร์มแวร์นี้ไม่ใช่ v2 — ถ้าข้อไหนหาสวิตช์ไม่เจอ บอร์ดจะค้างจนกว่าจะปิดไฟแขน", flush=True)
+    if fw not in ("JVseq2", "JVseq3"):
+        print("หมายเหตุ: เฟิร์มแวร์นี้ไม่ใช่ v2/v3 — ถ้าข้อไหนหาสวิตช์ไม่เจอ บอร์ดจะค้างจนกว่าจะปิดไฟแขน", flush=True)
     missing = sorted(set("123456") - set("".join(groups))) if groups != [""] else []
     if missing:
         print("หมายเหตุ: ข้อ " + ", ".join(f"J{c}" for c in missing) + " ไม่ได้ calibrate รอบนี้ "
@@ -129,6 +188,8 @@ def main():
     for group in groups:
         ser = calibrate_group(ser, path, group)
     print("calibrate ครบตามที่สั่งแล้ว", flush=True)
+    if arm:
+        go_after_calibrate(ser, arm, "123456" if groups == [""] else "".join(groups))
 
 
 if __name__ == "__main__":

@@ -185,7 +185,7 @@ def main():
     arm = need_arm()
     values = read_current(args.topic, programs.joint_names(arm, args.layout))
     try:
-        programs.check_pose(args.name, values)
+        programs.check_pose(args.name, values, arm)
     except programs.ProgramError as exc:
         sys.exit(f"ไม่บันทึก: {exc}")
     old = data["poses"][arm].get(args.name)
