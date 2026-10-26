@@ -7,6 +7,8 @@
   ar_ports.py --dir <พอร์ต> 000010 # ตั้งข้อที่มอเตอร์หมุนกลับด้าน J1..J6 (1 = กลับ) — แขนที่ประกอบข้อนั้นกลับด้าน
   ar_ports.py --identify           # ไล่ทีละบอร์ด: ข้อ 6 หมุนไป-กลับ 10° ให้ดูว่าแขนไหนขยับ แล้วตอบ l/r ตั้งชื่อให้เลย
   ar_ports.py --wiggle <พอร์ต|left|right>  # หมุนข้อ 6 ไป-กลับ ของบอร์ดเดียว (เช็กว่าชื่อนั้นคือแขนไหนจริง)
+  ar_ports.py --jog <พอร์ต|left|right> <ข้อ 1-6> <องศา> [รอบ]  # หมุนข้อนั้น +องศา -> กลับ -> -องศา -> กลับ
+                                   # ทดสอบมอเตอร์/สายพานทั้งสองทิศ (บน PC ใช้พอร์ต COMx ได้ เช่น --jog COM9 4 30)
 
 ทำไมต้องถามบอร์ด: Teensy สองแขนรายงานหมายเลข USB เดียวกัน (13173040) /dev/serial/by-id จึงแยกไม่ได้
 และ /dev/serial/by-path ผูกกับพอร์ต — ย้ายสายแล้วหาไม่เจอ · เฟิร์มแวร์ AR4_ROS2_seq v2 ตอบชื่อแขน (JN) ได้
@@ -17,6 +19,7 @@
 เป็นค่าในเฟิร์มแวร์ (ROS ไม่เคยส่ง SS) · ไม่ต้อง calibrate ก่อน เพราะ MT ขยับตามผลต่างจากตำแหน่งที่บอร์ดนับอยู่
 """
 import glob
+import math
 import os
 import re
 import sys
@@ -27,6 +30,9 @@ import serial
 AXES = "ABCDEF"      # ชื่อข้อในข้อความ JP / MT ของเฟิร์มแวร์ (J1..J6)
 WIGGLE_JOINT = 5     # ข้อ 6 (ข้อมือหมุน) — หมุนนิดเดียวไม่พาแขนหรือมือไปชนอะไร
 WIGGLE_DEG = 10.0
+SEQ_FW = ("seq2", "seq3")  # เฟิร์มแวร์ที่เก็บชื่อแขน/ทิศมอเตอร์ได้ (v3 = v2 + ค่าชดเชยศูนย์ JZ)
+JOG_MAX_DEG = 90.0
+EXCL = {"exclusive": True} if os.name == "posix" else {}   # Windows เปิดพอร์ตแบบผูกขาดอยู่แล้ว
 ARM_ALIASES = {"l": "left", "left": "left", "1": "left", "ซ้าย": "left",
                "r": "right", "right": "right", "2": "right", "ขวา": "right"}
 
@@ -60,7 +66,7 @@ def probe(dev):
                 info["error"] = "ไม่ตอบ (กำลัง calibrate / ระบบแขนใช้อยู่ / ไม่ใช่เฟิร์มแวร์ ROS)"
                 return info
             info["fw"] = ask(ser, "JV", "JV") or "original"
-            if info["fw"] == "seq2":
+            if info["fw"] in SEQ_FW:
                 info["name"] = ask(ser, "JN", "JN")
                 info["dir"] = ask(ser, "JD", "JD")
     except (serial.SerialException, OSError) as exc:
@@ -108,7 +114,7 @@ def move_to(ser, target, joint, timeout=8.0):
 
 def wiggle(port, times=2):
     """หมุนข้อ 6 ไป WIGGLE_DEG แล้วกลับที่เดิม times รอบ (หมุนเข้าหา 0° เสมอ ไม่ไปทางสุดระยะ)"""
-    with serial.Serial(port, 115200, timeout=0.3, exclusive=True) as ser:
+    with serial.Serial(port, 115200, timeout=0.3, **EXCL) as ser:
         time.sleep(0.2)
         start = read_joints(ser)
         if start is None:
@@ -126,6 +132,40 @@ def wiggle(port, times=2):
     return True
 
 
+def jog(port, joint, deg, cycles=1):
+    """หมุนข้อ joint (1-6) ไป +deg -> กลับ -> -deg -> กลับ ทีละรอบ แล้วจบที่ตำแหน่งเดิม
+
+    สั่งด้วย MT แบบเดียวกับไดรเวอร์ ROS ความเร็ว/ความเร่งเป็นค่าในเฟิร์มแวร์ (30°/s, 10°/s²)
+    "ถึง" = Teensy ส่งสเต็ปครบแล้ว — มอเตอร์ลื่นสเต็ปหรือไม่ต้องดู/ฟังที่แขนและจอไดรเวอร์เอง
+    """
+    j = joint - 1
+    timeout = 4.0 + 3.0 * math.sqrt(abs(deg) / 10.0)
+    with serial.Serial(port, 115200, timeout=0.3, **EXCL) as ser:
+        time.sleep(0.2)
+        start = read_joints(ser)
+        if start is None:
+            raise RuntimeError("บอร์ดไม่ตอบ JP (กำลัง calibrate / ระบบแขนใช้อยู่ / ไม่ใช่เฟิร์มแวร์ ROS?)")
+        name = ask(ser, "JN", "JN") if ask(ser, "JV", "JV") in SEQ_FW else None
+        print(f"{port} (แขน {name or 'ไม่มีชื่อ'}): J{joint} อยู่ที่ {start[j]:+.1f}° — หมุน ±{deg:.0f}° {cycles} รอบ")
+        try:
+            for c in range(1, cycles + 1):
+                for off in (deg, 0.0, -deg, 0.0):
+                    target = list(start)
+                    target[j] += off
+                    t0 = time.monotonic()
+                    ok = move_to(ser, target, j, timeout)
+                    print(f"  รอบ {c}: J{joint} -> {off:+.0f}° " + (f"ถึง ({time.monotonic() - t0:.1f} s)" if ok else "ไม่ถึงในเวลา"),
+                          flush=True)
+                    if not ok:
+                        move_to(ser, start, j, timeout)
+                        return False
+        except KeyboardInterrupt:
+            print("  หยุด — พาข้อกลับที่เดิม")
+            move_to(ser, start, j, timeout)
+            raise
+    return True
+
+
 def identify():
     """ไล่ทีละบอร์ด: หมุนข้อ 6 ให้ดู แล้วถามว่าแขนไหน -> ตั้งชื่อ (JN) เก็บในบอร์ด"""
     infos = [probe(dev) for dev in teensy_ports()]
@@ -139,7 +179,7 @@ def identify():
         if info["error"]:
             print(f"{head}: ข้าม — {info['error']}")
             continue
-        if info["fw"] != "seq2":
+        if info["fw"] not in SEQ_FW:
             print(f"{head}: ข้าม — เฟิร์มแวร์ {info['fw']} เก็บชื่อแขนไม่ได้ (แฟลช AR4_ROS2_seq v2 ก่อน)")
             continue
         print(f"{head}  ชื่อตอนนี้: {info['name'] or '(ยังไม่ตั้ง)'} — ดูข้อ 6 ...")
@@ -179,7 +219,7 @@ def print_ports(infos):
 def set_value(port, cmd, value):
     with serial.Serial(port, 115200, timeout=0.3) as ser:
         time.sleep(0.2)
-        if ask(ser, "JV", "JV") != "seq2":
+        if ask(ser, "JV", "JV") not in SEQ_FW:
             sys.exit("บอร์ดนี้ไม่ใช่เฟิร์มแวร์ AR4_ROS2_seq v2 — แฟลชก่อน")
         reply = ask(ser, f"{cmd}={value}", cmd)
         print(f"{port}: {cmd} = {reply}")
@@ -210,6 +250,27 @@ def main():
         except (RuntimeError, serial.SerialException, OSError) as exc:
             sys.exit(f"{port}: {exc}")
         print("เสร็จ — ไม่เห็นข้อ 6 ขยับ = ไฟแขนปิดอยู่ หรือเป็นบอร์ดของอีกแขน")
+        return
+    if args[:1] == ["--jog"] and len(args) in (4, 5):
+        port = args[1]
+        if not (os.path.exists(port) or port.upper().startswith("COM")):
+            name = ARM_ALIASES.get(port.lower(), port)
+            port = next((i["port"] for i in map(probe, teensy_ports()) if i["name"] == name), None)
+            if port is None:
+                sys.exit(f"ไม่เจอบอร์ดชื่อ '{name}' — ดู: ar_ports.py --list")
+        try:
+            joint, deg = int(args[2]), float(args[3])
+            cycles = int(args[4]) if len(args) == 5 else 1
+        except ValueError:
+            sys.exit("ใช้: --jog <พอร์ต|left|right> <ข้อ 1-6> <องศา> [รอบ]   เช่น --jog COM9 4 30 2")
+        if not 1 <= joint <= 6 or not 0 < deg <= JOG_MAX_DEG or not 1 <= cycles <= 20:
+            sys.exit(f"ข้อ 1-6 · องศา 1-{JOG_MAX_DEG:.0f} · รอบ 1-20")
+        input(f"ข้อ {joint} จะหมุน ±{deg:.0f}° — ดูรอบแขน/มือให้ว่าง มือพร้อมปิดไฟแขน แล้วกด Enter (ยกเลิก Ctrl+C) ")
+        try:
+            ok = jog(port, joint, deg, cycles)
+        except (RuntimeError, serial.SerialException, OSError) as exc:
+            sys.exit(f"{port}: {exc}")
+        print("เสร็จ — กลับที่เดิมแล้ว" if ok else "ข้อนั้นไม่ถึงเป้าในเวลา — สั่งให้กลับที่เดิมแล้ว ดูจอไดรเวอร์ว่าขึ้น error ไหม")
         return
     infos = [probe(dev) for dev in teensy_ports()]
     if args[:1] == ["--list"]:
