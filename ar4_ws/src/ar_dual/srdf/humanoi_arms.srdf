@@ -23,10 +23,10 @@
   </group_state>
   <group_state name="rest" group="right_arm">
     <joint name="right_joint_1" value="0.0"/>
-    <joint name="right_joint_2" value="-0.1019"/>
+    <joint name="right_joint_2" value="0.0"/>
     <joint name="right_joint_3" value="0.0"/>
     <joint name="right_joint_4" value="0.0"/>
-    <joint name="right_joint_5" value="-0.9103"/>
+    <joint name="right_joint_5" value="0.0"/>  <!-- แขนขวาหลัง calibrate ไปท่าตรง (config/zero_trims.yaml after_calibrate) -->
     <joint name="right_joint_6" value="0.0"/>
   </group_state>
   <group_state name="rest" group="both_arms">
@@ -37,10 +37,10 @@
     <joint name="left_joint_5" value="0.0"/>  <!-- แขนซ้ายหลัง calibrate ไปท่าตรง (config/zero_trims.yaml after_calibrate) -->
     <joint name="left_joint_6" value="0.0"/>
     <joint name="right_joint_1" value="0.0"/>
-    <joint name="right_joint_2" value="-0.1019"/>
+    <joint name="right_joint_2" value="0.0"/>
     <joint name="right_joint_3" value="0.0"/>
     <joint name="right_joint_4" value="0.0"/>
-    <joint name="right_joint_5" value="-0.9103"/>
+    <joint name="right_joint_5" value="0.0"/>  <!-- แขนขวาหลัง calibrate ไปท่าตรง (config/zero_trims.yaml after_calibrate) -->
     <joint name="right_joint_6" value="0.0"/>
   </group_state>
   <disable_collisions link1="left_base_link" link2="left_link_1" reason="Adjacent"/>
