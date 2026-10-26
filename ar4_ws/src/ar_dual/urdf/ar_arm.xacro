@@ -2,9 +2,26 @@
 <!-- สำเนาของ ar_description/urdf/ar_macro.xacro (ของผู้ขาย ไม่แก้) ที่เพิ่ม prefix ให้ชื่อ link/joint
      เพื่อใส่แขน AR4 สองตัวในโมเดลเดียว (left_ / right_) — สร้างด้วยสคริปต์แทนที่ชื่อเท่านั้น
      ค่าเรขาคณิต/ลิมิต/mesh เหมือนต้นฉบับทุกตัว (mesh ยังอ่านจากแพ็กเกจ ar_description)
-     เพิ่ม dir1..dir6 (ค่าเริ่ม 1): -1 = กลับทิศหมุนของข้อนั้นในโมเดล ให้ตรงกับแขนที่ประกอบข้อนั้นกลับด้าน -->
+     เพิ่ม dir1..dir6 (ค่าเริ่ม 1): -1 = กลับทิศหมุนของข้อนั้นในโมเดล ให้ตรงกับแขนที่ประกอบข้อนั้นกลับด้าน
+     เพิ่ม flip4 (ค่าเริ่ม 0): 1 = ศูนย์ของข้อ 4 อยู่ห่างจากต้นฉบับ 180° (ข้อมือทั้งชุดหมุนครึ่งรอบ — ชุดข้อ 5 อยู่อีกฝั่ง
+     และข้อ 5 ดูงอกลับทิศ) ค่ามุมจากเฟิร์มแวร์ไม่เปลี่ยน แค่หมุนเฟรมลูกของข้อ 4 รอบแกนตัวเอง 180°
+     เพิ่ม off1..off6 (องศา ค่าเริ่ม 0): มุมจริงของข้อ − มุมที่เฟิร์มแวร์นับ (วัดจากแขนจริง) — เฟรม link_N หมุนต่อจาก
+     link_N_raw (ตามมุมที่นับได้) รอบแกนเดียวกันอีก offN · มุมที่โปรแกรมเห็น/สั่ง และท่าที่สอนไว้ไม่เปลี่ยน แค่โมเดลตรงของจริง
+     ต่างจากต้นฉบับ: effort = 100 ทุกข้อ และ joint_2 velocity = 0.5 (ต้นฉบับตั้ง effort 0 / velocity 0 —
+     แขนจริงไม่ได้อ่านค่านี้ แต่ใน Gazebo effort 0 = มอเตอร์ไม่มีแรง แขนห้อยตกจนชน hard-stop) -->
 <robot xmlns:xacro="http://wiki.ros.org/xacro">
-  <xacro:macro name="ar_arm" params="prefix parent *origin dir1:=1 dir2:=1 dir3:=1 dir4:=1 dir5:=1 dir6:=1">
+  <!-- ศูนย์ข้อต่อจริงห่างจากที่เฟิร์มแวร์นับ: ข้อ revolute หมุน link_N_raw ตามมุมที่นับ แล้วหมุนต่ออีก offset รอบแกนเดียวกัน
+       (rpy = แกนข้อ × offset) — link_N คือเฟรมจริงของชิ้นแขน mesh/มือ/กล้องอ้างเฟรมนี้เหมือนเดิม -->
+  <xacro:macro name="zero_offset" params="prefix n rpy">
+    <link name="${prefix}link_${n}_raw"/>
+    <joint name="${prefix}joint_${n}_zero" type="fixed">
+      <parent link="${prefix}link_${n}_raw"/>
+      <child link="${prefix}link_${n}"/>
+      <origin rpy="${rpy}" xyz="0 0 0"/>
+    </joint>
+  </xacro:macro>
+  <xacro:macro name="ar_arm" params="prefix parent *origin dir1:=1 dir2:=1 dir3:=1 dir4:=1 dir5:=1 dir6:=1 flip4:=0
+                                   off1:=0 off2:=0 off3:=0 off4:=0 off5:=0 off6:=0">
 
     <joint name="${prefix}base_joint" type="fixed">
       <xacro:insert_block name="origin" />
@@ -59,10 +76,11 @@
     <joint name="${prefix}joint_1" type="revolute">
       <origin rpy="${pi} 0 0" xyz="0 0 0.003445"/>
       <parent link="${prefix}base_link"/>
-      <child link="${prefix}link_1"/>
+      <child link="${prefix}link_1_raw"/>
       <axis xyz="${float(dir1) * 0} ${float(dir1) * 0} ${float(dir1) * 1}"/>
-      <limit lower="${-170.0 / 180.0 * pi}" upper="${170.0 / 180.0 * pi}" effort="0" velocity="0.5"/>
+      <limit lower="${-170.0 / 180.0 * pi}" upper="${170.0 / 180.0 * pi}" effort="100" velocity="0.5"/>
     </joint>
+    <xacro:zero_offset prefix="${prefix}" n="1" rpy="0 0 ${float(off1) * pi / 180.0 * float(dir1)}"/>
     <link name="${prefix}link_2">
       <inertial>
         <origin rpy="0 0 0" xyz="0.064818 -0.11189 -0.038671"/>
@@ -88,10 +106,11 @@
     <joint name="${prefix}joint_2" type="revolute">
       <origin rpy="1.5708 0.5236 -1.5708" xyz="0 0.064146 -0.16608"/>
       <parent link="${prefix}link_1"/>
-      <child link="${prefix}link_2"/>
+      <child link="${prefix}link_2_raw"/>
       <axis xyz="${float(dir2) * 0} ${float(dir2) * 0} ${float(dir2) * -1}"/>
-      <limit lower="${-42.0 / 180.0 * pi}" upper="${90.0 / 180.0 * pi}" effort="0.5" velocity="0"/>
+      <limit lower="${-42.0 / 180.0 * pi}" upper="${90.0 / 180.0 * pi}" effort="100" velocity="0.5"/>
     </joint>
+    <xacro:zero_offset prefix="${prefix}" n="2" rpy="0 0 ${-float(off2) * pi / 180.0 * float(dir2)}"/>
     <link name="${prefix}link_3">
       <inertial>
         <origin rpy="0 0 0" xyz="-0.00029765 -0.023661 -0.0019125"/>
@@ -117,10 +136,11 @@
     <joint name="${prefix}joint_3" type="revolute">
       <origin rpy="0 0 -2.61799" xyz="0.1525 -0.26414 0"/>
       <parent link="${prefix}link_2"/>
-      <child link="${prefix}link_3"/>
+      <child link="${prefix}link_3_raw"/>
       <axis xyz="${float(dir3) * 0} ${float(dir3) * 0} ${float(dir3) * -1}"/>
-      <limit lower="${-89.0 / 180.0 * pi}" upper="${52.0 / 180.0 * pi}" effort="0" velocity="0.5"/>
+      <limit lower="${-89.0 / 180.0 * pi}" upper="${52.0 / 180.0 * pi}" effort="100" velocity="0.5"/>
     </joint>
+    <xacro:zero_offset prefix="${prefix}" n="3" rpy="0 0 ${-float(off3) * pi / 180.0 * float(dir3)}"/>
     <link name="${prefix}link_4">
       <inertial>
         <origin rpy="0 0 0" xyz="-0.0016798 -0.00057319 -0.074404"/>
@@ -144,12 +164,14 @@
       </collision>
     </link>
     <joint name="${prefix}joint_4" type="revolute">
-      <origin rpy="1.5708 -1.2554 -1.5708" xyz="0 0 0.00675"/>
+      <!-- flip4: ต้นฉบับ × หมุนรอบแกนข้อ 4 (z) 180° — คำนวณไว้แล้ว (ตรวจย้อนกลับ ผิดพลาด < 1e-15) -->
+      <origin rpy="${'-1.5708 1.2554 1.570793' if int(flip4) else '1.5708 -1.2554 -1.5708'}" xyz="0 0 0.00675"/>
       <parent link="${prefix}link_3"/>
-      <child link="${prefix}link_4"/>
+      <child link="${prefix}link_4_raw"/>
       <axis xyz="${float(dir4) * 0} ${float(dir4) * 0} ${float(dir4) * -1}"/>
-      <limit lower="${-165.0 / 180.0 * pi}" upper="${165.0 / 180.0 * pi}" effort="0" velocity="0.5"/>
+      <limit lower="${-165.0 / 180.0 * pi}" upper="${165.0 / 180.0 * pi}" effort="100" velocity="0.5"/>
     </joint>
+    <xacro:zero_offset prefix="${prefix}" n="4" rpy="0 0 ${-float(off4) * pi / 180.0 * float(dir4)}"/>
     <link name="${prefix}link_5">
       <inertial>
         <origin rpy="0 0 0" xyz="0.0015066 -1.3102E-05 -0.012585"/>
@@ -175,10 +197,11 @@
     <joint name="${prefix}joint_5" type="revolute">
       <origin rpy="${pi} 0 -2.8262" xyz="0 0 -0.22225"/>
       <parent link="${prefix}link_4"/>
-      <child link="${prefix}link_5"/>
+      <child link="${prefix}link_5_raw"/>
       <axis xyz="${float(dir5) * 1} ${float(dir5) * 0} ${float(dir5) * 0}"/>
-      <limit lower="${-105.0 / 180.0 * pi}" upper="${105.0 / 180.0 * pi}" effort="0" velocity="0.5"/>
+      <limit lower="${-105.0 / 180.0 * pi}" upper="${105.0 / 180.0 * pi}" effort="100" velocity="0.5"/>
     </joint>
+    <xacro:zero_offset prefix="${prefix}" n="5" rpy="${float(off5) * pi / 180.0 * float(dir5)} 0 0"/>
     <link name="${prefix}link_6">
       <inertial>
         <origin rpy="0 0 0" xyz="2.9287E-10 -1.6472E-09 0.0091432"/>
@@ -204,9 +227,10 @@
     <joint name="${prefix}joint_6" type="revolute">
       <origin rpy="0 0 3.1416" xyz="-0.000294 0 0.02117"/>
       <parent link="${prefix}link_5"/>
-      <child link="${prefix}link_6"/>
+      <child link="${prefix}link_6_raw"/>
       <axis xyz="${float(dir6) * 0} ${float(dir6) * 0} ${float(dir6) * 1}"/>
-      <limit lower="${-155.0 / 180.0 * pi}" upper="${155.0 / 180.0 * pi}" effort="0" velocity="0.5"/>
+      <limit lower="${-155.0 / 180.0 * pi}" upper="${155.0 / 180.0 * pi}" effort="100" velocity="0.5"/>
     </joint>
+    <xacro:zero_offset prefix="${prefix}" n="6" rpy="0 0 ${float(off6) * pi / 180.0 * float(dir6)}"/>
   </xacro:macro>
 </robot>

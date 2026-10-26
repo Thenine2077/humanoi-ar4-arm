@@ -1,0 +1,103 @@
+<?xml version="1.0"?>
+<!-- ลำตัวบนของ Humanoi: เสา + หัว + กล้อง + แขน AR4 สองข้าง + มือ — ไฟล์เดียวใช้ทั้งระบบแขนจริง
+  (humanoi_arms.urdf.xacro) และหุ่นเต็มตัวใน Gazebo (humanoi_description/urdf/humanoi_full.urdf.xacro)
+  แก้ขนาดที่ไฟล์นี้ที่เดียว RViz/MoveIt ของแขนจริงกับซิมจะตรงกันเสมอ
+
+  เฟรม "torso" = กึ่งกลางระหว่างฐานแขนสองตัว ที่ความสูงหัวไหล่: X ไปหน้าหุ่น, Y ไปซ้ายหุ่น, Z ขึ้น
+  ฐานแขน (base_link ของ AR4: Z = แกน J1 ชี้ออกจากผิวที่ยึด) ยึดกับเสาแนวนอน
+  - ซ้าย: Z ชี้ไปซ้ายหุ่น, X ไปหน้า, Y ลง — ได้จาก hand-eye calibration วันที่ 15 ต.ค. (ทิศขึ้น = -Y ของฐาน)
+  - ขวา: กลับด้านจากซ้าย (กล่องมอเตอร์ J1 ห้อยลงเหมือนกันตามรูป) — Z ชี้ไปขวา, X ไปหลัง, Y ลง
+    ** เดาจากรูป ยังไม่ได้วัด — ถ้าโมเดลแขนขวาใน RViz ไม่ตรงกับแขนจริงให้แก้ up_right_rpy **
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <xacro:include filename="$(find ar_dual)/urdf/ar_arm.xacro"/>
+  <xacro:include filename="$(find ar_dual)/urdf/amazinghand.xacro"/>
+
+  <!-- ===== วัดจากหุ่นจริง 19 ต.ค. 2026 (ความสูงวัดจากพื้น) ===== -->
+  <xacro:property name="up_shoulder_z" value="1.455"/>   <!-- H: พื้น -> กึ่งกลางฐานแขน (แกน J1) -->
+  <xacro:property name="up_plate_top" value="0.205"/>    <!-- C + B: พื้น -> ผิวบนแผ่นฐาน (19.5 + 1 cm) -->
+  <xacro:property name="up_head_top" value="1.77"/>      <!-- I: พื้น -> ยอดหัว -->
+  <xacro:property name="up_half_gap" value="0.055"/>     <!-- ฐานแขนซ้าย-ขวาห่างกัน 11 cm -->
+  <!-- ===== ยังไม่ได้วัด (ค่าประมาณจากรูป) ===== -->
+  <xacro:property name="up_pole_x" value="0.10"/>        <!-- หน้าตัดเสา หน้า-หลัง -->
+  <xacro:property name="up_pole_y" value="0.08"/>        <!-- หน้าตัดเสา ซ้าย-ขวา -->
+  <xacro:property name="up_pole_dx" value="0.01"/>       <!-- กึ่งกลางเสาอยู่หน้าแกนหัวไหล่ -->
+  <xacro:property name="up_head_r" value="0.13"/>        <!-- หมวกกันน็อก ประมาณเป็นทรงกลม -->
+
+  <!-- ===== คำนวณจากค่าข้างบน (เทียบเฟรม torso) ===== -->
+  <xacro:property name="up_pole_bottom" value="${up_plate_top - up_shoulder_z}"/>
+  <xacro:property name="up_head_cz" value="${up_head_top - up_shoulder_z - up_head_r}"/>
+  <xacro:property name="up_pole_len" value="${up_head_cz - up_pole_bottom}"/>
+  <xacro:property name="up_pole_cz" value="${(up_head_cz + up_pole_bottom) / 2}"/>
+  <xacro:property name="up_left_rpy" value="${-pi/2} 0 0"/>
+  <xacro:property name="up_right_rpy" value="${-pi/2} 0 ${pi}"/>
+
+  <!-- left_hand / right_hand: มีมือ AmazingHand ติดแขนนั้นหรือไม่ -->
+  <xacro:macro name="humanoi_upper" params="left_hand:=true right_hand:=true">
+    <link name="torso">
+      <!-- เสาอะลูมิเนียมโปรไฟล์ จากผิวบนแผ่นฐานขึ้นไปถึงหัว -->
+      <visual>
+        <origin xyz="${up_pole_dx} 0 ${up_pole_cz}" rpy="0 0 0"/>
+        <geometry><box size="${up_pole_x} ${up_pole_y} ${up_pole_len}"/></geometry>
+        <material name="pole"><color rgba="0.75 0.75 0.78 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="${up_pole_dx} 0 ${up_pole_cz}" rpy="0 0 0"/>
+        <geometry><box size="${up_pole_x} ${up_pole_y} ${up_pole_len}"/></geometry>
+      </collision>
+      <!-- หัว (หมวกกันน็อก) -->
+      <visual>
+        <origin xyz="0.02 0 ${up_head_cz}" rpy="0 0 0"/>
+        <geometry><sphere radius="${up_head_r}"/></geometry>
+        <material name="head"><color rgba="0.1 0.1 0.1 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0.02 0 ${up_head_cz}" rpy="0 0 0"/>
+        <geometry><sphere radius="${up_head_r}"/></geometry>
+      </collision>
+      <!-- กล้อง Astra Pro หน้าเสาใต้หัวไหล่ (ตำแหน่งจาก hand-eye) -->
+      <visual>
+        <origin xyz="0.095 0.009 -0.048" rpy="0 0 0"/>
+        <geometry><box size="0.05 0.17 0.05"/></geometry>
+        <material name="camera"><color rgba="0.2 0.2 0.25 1"/></material>
+      </visual>
+      <collision>
+        <origin xyz="0.095 0.009 -0.048" rpy="0 0 0"/>
+        <geometry><box size="0.05 0.17 0.05"/></geometry>
+      </collision>
+      <inertial>
+        <origin xyz="${up_pole_dx} 0 ${up_pole_cz}" rpy="0 0 0"/>
+        <mass value="3.0"/>
+        <inertia ixx="0.5" ixy="0" ixz="0" iyy="0.5" iyz="0" izz="0.01"/>
+      </inertial>
+    </link>
+
+    <!-- แขนซ้าย: ศูนย์ข้อต่อจริง (off องศา = มุมจริง − มุมที่โปรแกรมบอก) — 26 ต.ค. ผู้ใช้จัดแต่ละข้อให้ตรงด้วยระดับน้ำ
+         (มุมจริง 0) แล้วอ่านค่าในโปรแกรม: ข้อ 1 7 · ข้อ 2 2 · ข้อ 3 0 · ข้อ 4 7 · ข้อ 5 −19 · ข้อ 6 −15 -> off = −ค่าที่อ่าน
+         (ข้อไหนในโมเดลเบี้ยวกว่าเดิม = กลับเครื่องหมายข้อนั้น) -->
+    <xacro:ar_arm prefix="left_" parent="torso" off1="-7" off2="-2" off3="0" off4="-7" off5="19" off6="15">
+      <origin xyz="0 ${up_half_gap} 0" rpy="${up_left_rpy}"/>
+    </xacro:ar_arm>
+    <!-- แขนขวา: ศูนย์ข้อ 4 ห่างจากโมเดลต้นฉบับ 180° (flip4) + ข้อ 5 กลับทิศ (dir5)
+         21 ต.ค. ผู้ใช้เห็นชุดข้อ 5 อยู่ผิดฝั่งและหน้าแปลนชี้เข้าเสา (เดิมมีแค่ dir5="-1" ตั้งแต่ 16 ต.ค.)
+         เช็กที่ท่าพักหลัง calibrate (สองแขนค่าข้อต่อเท่ากัน) เทียบภาพสะท้อนของแขนซ้าย:
+           dir5 อย่างเดียว      → หน้าแปลนชี้เข้าเสา, ชิ้นข้อ 4 ห่าง 34 มม.
+           flip4 + dir5        → หน้าแปลนถูก, ชิ้นข้อ 4/5/6 ห่าง ~14 มม. (เท่าชิ้นอื่น — ชิ้นส่วนสองแขนไม่ได้กลับซ้ายขวา)
+         ถ้าเจอข้ออื่นกลับทิศอีก ใส่ dirN="-1" เพิ่มตรงนี้ -->
+    <xacro:ar_arm prefix="right_" parent="torso" dir5="-1" flip4="1">
+      <origin xyz="0 ${-up_half_gap} 0" rpy="${up_right_rpy}"/>
+    </xacro:ar_arm>
+
+    <xacro:if value="${left_hand}">
+      <!-- เทียบรูปจริงท่าพักหลัง calibrate (21 ต.ค.): ฝ่ามือหันเข้าเสา/ขึ้นบน = หมุน 90° จากโมเดล
+           ตัวยึดกลมสีขาวระหว่างหน้าแปลนกับมือ ~25 มม. (ประเมินจากรูป — วัดจริงแล้วแก้ mount_offset) -->
+      <xacro:amazinghand prefix="left_" parent="left_link_6" mount_offset="0.025" mount_yaw="${pi/2}"/>
+    </xacro:if>
+    <xacro:if value="${right_hand}">
+      <!-- มือซ้าย (ภาพสะท้อนของมือขวา) ยึดแบบสะท้อนกับแขนซ้าย — mount_yaw คำนวณให้ฝ่ามือสะท้อนฝ่ามือซ้ายพอดี
+           ที่ท่าพัก (ยังไม่มีรูปมือจริงบนแขนขวา — มีแล้วเทียบอีกครั้ง) -->
+      <xacro:amazinghand prefix="right_" parent="right_link_6" side="left" mount_offset="0.025"
+                         mount_yaw="${-pi/2}"/>
+    </xacro:if>
+  </xacro:macro>
+</robot>

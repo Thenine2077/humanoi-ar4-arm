@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!-- ros2_control ของแขน AR4 หนึ่งข้าง (ชื่อข้อต่อ ${prefix}joint_1..6) — ใช้ร่วมกันทั้งแขนจริงและซิม
+  hw = real (Teensy ผ่านไดรเวอร์ของผู้ขาย) | mock (จำลอง ไม่ต่อบอร์ด) | gz (Gazebo ผ่าน gz_ros2_control)
+  ลิมิตเป็นตัวเลขจริง (ไฟล์ของผู้ขายเขียน {..} ไม่มี $ จึง parse ไม่ผ่าน)
+  initial_value = ท่าพักหลัง calibrate (ใช้ตอน mock / ซิม)
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <xacro:macro name="arm_joint" params="name lo hi init">
+    <joint name="${name}">
+      <command_interface name="position">
+        <param name="min">${lo * pi / 180}</param>
+        <param name="max">${hi * pi / 180}</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">${init}</param>
+      </state_interface>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="arm_control" params="prefix hw port:=none">
+    <ros2_control name="${prefix}arm" type="system">
+      <hardware>
+        <xacro:if value="${hw == 'real'}">
+          <plugin>ar_hardware_interface/ARHardwareInterface</plugin>
+          <param name="serial_port">${port}</param>
+          <param name="calibrate">False</param>
+        </xacro:if>
+        <xacro:if value="${hw == 'mock'}">
+          <plugin>mock_components/GenericSystem</plugin>
+        </xacro:if>
+        <xacro:if value="${hw == 'gz'}">
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+          <!-- ค่าเริ่ม 0.1 อ่อนเกินจะต้านน้ำหนักแขน แขนจะค่อยๆห้อยลง (เจอแล้วในซิมแขนเดี่ยว) -->
+          <param name="position_proportional_gain">20.0</param>
+        </xacro:if>
+      </hardware>
+      <xacro:arm_joint name="${prefix}joint_1" lo="-170" hi="170" init="0.0"/>
+      <xacro:arm_joint name="${prefix}joint_2" lo="-42" hi="90" init="-0.1019"/>
+      <xacro:arm_joint name="${prefix}joint_3" lo="-89" hi="52" init="0.0"/>
+      <xacro:arm_joint name="${prefix}joint_4" lo="-165" hi="165" init="0.0"/>
+      <xacro:arm_joint name="${prefix}joint_5" lo="-105" hi="105" init="-0.9103"/>
+      <xacro:arm_joint name="${prefix}joint_6" lo="-155" hi="155" init="0.0"/>
+    </ros2_control>
+  </xacro:macro>
+</robot>

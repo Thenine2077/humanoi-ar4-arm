@@ -66,4 +66,11 @@
   <disable_collisions link1="torso" link2="right_base_link" reason="Adjacent"/>
   <disable_collisions link1="torso" link2="right_link_1" reason="Never"/>
   <disable_collisions link1="left_base_link" link2="right_base_link" reason="Never"/>
+  <!-- มือ AmazingHand บนแขนซ้าย (humanoi_upper.xacro left_hand) — ยึดติดหน้าแปลนข้อ 6
+       ยังเช็กมือกับ link_4 / link_3 / แขนอีกข้าง / เสา หัว กล้อง ตามปกติ (มือเคยชนตอน calibrate) -->
+  <disable_collisions link1="left_hand" link2="left_link_6" reason="Adjacent"/>
+  <disable_collisions link1="left_hand" link2="left_link_5" reason="Never"/>
+  <!-- มือซ้าย (โมเดลสะท้อน) บนแขนขวา (humanoi_upper.xacro right_hand) — กฎเดียวกับมือแขนซ้าย -->
+  <disable_collisions link1="right_hand" link2="right_link_6" reason="Adjacent"/>
+  <disable_collisions link1="right_hand" link2="right_link_5" reason="Never"/>
 </robot>

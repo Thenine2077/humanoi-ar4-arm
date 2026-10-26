@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!-- มือ AmazingHand (Pollen Robotics, 8 servo SCS0009) ติดหน้าแปลนข้อ 6 ของแขน AR4
+  side = right (mesh ของผู้ผลิต) | left (mesh ขวาสะท้อนแกน Y — ah_left_*.stl, ดู NOTICE.md)
+
+  รูปทรงจากโมเดล 3D ของผู้ผลิต (meshes/amazinghand — ดู NOTICE.md) จับนิ้วค้างไว้ท่าตั้งต้นของ CAD
+  (นิ้วงอเล็กน้อย) — ยังขยับนิ้วในโมเดลไม่ได้ · collision เป็นกล่อง 3 ก้อนที่ครอบ mesh (ข้อมือ / ฝ่ามือ+นิ้วโป้ง / นิ้ว)
+
+  เฟรม ${prefix}hand: Z = จากหน้าตัวยึดข้อมือ (z = 0) ไปทางปลายนิ้ว (แนวแกนข้อ 6), +X = ฝั่งฝ่ามือ
+  หน้าแปลนของ link_6 อยู่ที่ z = 0.016 (ขอบบนของ ar_description/meshes/ar4/link_6.STL)
+
+  ยังไม่ได้วัด (แก้ตอนเรียก macro):
+    mount_offset = ความหนาตัวยึดจากหน้าแปลนถึงหน้าตัวยึดข้อมือของมือ (m)
+    mount_yaw    = มุมที่มือหมุนรอบแกนข้อ 6 เทียบกับโมเดล (rad) — ดูจากรูปตอนข้อ 6 = 0
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+  <xacro:macro name="amazinghand" params="prefix parent side:=right mount_offset:=0.0 mount_yaw:=0.0">
+    <xacro:property name="ys" value="${1 if side == 'right' else -1}"/>
+    <joint name="${prefix}hand_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${prefix}hand"/>
+      <origin xyz="0 0 ${0.016 + mount_offset}" rpy="0 0 ${mount_yaw}"/>
+    </joint>
+
+    <link name="${prefix}hand">
+      <!-- servo + แผ่นฝ่ามือ (สีเข้ม) -->
+      <visual>
+        <geometry>
+          <mesh filename="file://$(find ar_dual)/meshes/amazinghand/ah_${side}_dark.stl"/>
+        </geometry>
+        <material name="hand_dark"><color rgba="0.28 0.29 0.31 1"/></material>
+      </visual>
+      <!-- โครงพิมพ์ 3D + เปลือกนิ้ว (สีอ่อน) -->
+      <visual>
+        <geometry>
+          <mesh filename="file://$(find ar_dual)/meshes/amazinghand/ah_${side}_light.stl"/>
+        </geometry>
+        <material name="hand_light"><color rgba="0.92 0.92 0.92 1"/></material>
+      </visual>
+      <!-- ข้อมือ / ตัวยึด -->
+      <collision>
+        <origin xyz="0.012 ${ys * 0.002} 0.0156" rpy="0 0 0"/>
+        <geometry><box size="0.079 0.076 0.029"/></geometry>
+      </collision>
+      <!-- ฝ่ามือ + servo + นิ้วโป้ง -->
+      <collision>
+        <origin xyz="0.030 0 0.065" rpy="0 0 0"/>
+        <geometry><box size="0.125 0.111 0.070"/></geometry>
+      </collision>
+      <!-- นิ้วชี้ กลาง นาง -->
+      <collision>
+        <origin xyz="0.013 ${ys * -0.014} 0.135" rpy="0 0 0"/>
+        <geometry><box size="0.081 0.103 0.070"/></geometry>
+      </collision>
+      <!-- ~400 g ทั้งมือ (8 servo + โครงพิมพ์ 3D) -->
+      <inertial>
+        <origin xyz="0.02 0 0.07" rpy="0 0 0"/>
+        <mass value="0.4"/>
+        <inertia ixx="0.0011" ixy="0" ixz="0" iyy="0.0011" iyz="0" izz="0.0005"/>
+      </inertial>
+    </link>
+  </xacro:macro>
+</robot>

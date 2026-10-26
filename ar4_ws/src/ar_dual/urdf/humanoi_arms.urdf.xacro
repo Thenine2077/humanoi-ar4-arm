@@ -1,12 +1,6 @@
 <?xml version="1.0"?>
-<!-- Humanoi: แขน AR4 สองตัว (ซ้าย/ขวา) ติดสองข้างเสากลาง + เสา หัว กล้อง (ไว้ให้ MoveIt เช็กการชน)
-
-  เฟรมราก "torso" = กึ่งกลางระหว่างฐานแขนสองตัว ที่ความสูงหัวไหล่: X ไปหน้าหุ่น, Y ไปซ้ายหุ่น, Z ขึ้น
-  ฐานแขน (base_link ของ AR4: Z = แกน J1 ชี้ออกจากผิวที่ยึด) ยึดกับเสาแนวนอน ห่างกัน 11 cm (วัดจริง)
-  - ซ้าย: Z ชี้ไปซ้ายหุ่น, X ไปหน้า, Y ลง — ได้จาก hand-eye calibration วันที่ 15 ต.ค. (ทิศขึ้น = -Y ของฐาน)
-  - ขวา: กลับด้านจากซ้าย (กล่องมอเตอร์ J1 ห้อยลงเหมือนกันตามรูป) — Z ชี้ไปขวา, X ไปหลัง, Y ลง
-    ** เดาจากรูป ยังไม่ได้วัด — ถ้าโมเดลแขนขวาใน RViz ไม่ตรงกับแขนจริงให้แก้ right_rpy **
-  เสา/หัว/กล้อง = กล่องและทรงกลมคร่าวๆ (เผื่อใหญ่ไว้) ใช้แค่กันชนใน MoveIt
+<!-- Humanoi: แขน AR4 สองตัว (ซ้าย/ขวา) ติดสองข้างเสากลาง + เสา หัว กล้อง มือ — สำหรับระบบแขนจริง (ไม่มีฐานล้อ)
+  เรขาคณิตทั้งหมดอยู่ใน humanoi_upper.xacro (ใช้ร่วมกับหุ่นเต็มตัวใน Gazebo) — แก้ขนาดที่นั่น
 
   ฮาร์ดแวร์แต่ละแขน: left_hw / right_hw = real (Teensy ผ่านไดรเวอร์ของผู้ขาย) หรือ mock (จำลอง ไม่ต่อบอร์ด)
   calibrate ไม่ทำใน ROS (ไดรเวอร์ผู้ขายบล็อก ~2 นาที/แขน และ USB มักหลุดระหว่างนั้น) — ใช้ scripts/ar_calibrate.py
@@ -16,90 +10,11 @@
   <xacro:arg name="right_port" default="/dev/serial/by-path/platform-xhci-hcd.1-usb-0:2:1.0"/>
   <xacro:arg name="left_hw" default="real"/>
   <xacro:arg name="right_hw" default="real"/>
-  <xacro:property name="half_gap" value="0.055"/>
-  <xacro:property name="left_rpy" value="${-pi/2} 0 0"/>
-  <xacro:property name="right_rpy" value="${-pi/2} 0 ${pi}"/>
 
-  <xacro:include filename="$(find ar_dual)/urdf/ar_arm.xacro"/>
+  <xacro:include filename="$(find ar_dual)/urdf/humanoi_upper.xacro"/>
+  <xacro:include filename="$(find ar_dual)/urdf/arm_control.xacro"/>
 
-  <link name="torso">
-    <!-- เสาอะลูมิเนียมโปรไฟล์ (หน้ากว้าง ~8 cm ตามรูป) ยาวลงไปถึงฐานล้อ -->
-    <collision>
-      <origin xyz="0.01 0 -0.60" rpy="0 0 0"/>
-      <geometry><box size="0.10 0.08 1.40"/></geometry>
-    </collision>
-    <!-- หัว (หมวกกันน็อก) เหนือหัวไหล่ -->
-    <collision>
-      <origin xyz="0.02 0 0.27" rpy="0 0 0"/>
-      <geometry><sphere radius="0.16"/></geometry>
-    </collision>
-    <!-- กล้อง Astra Pro หน้าเสาใต้หัวไหล่ (ตำแหน่งจาก hand-eye) -->
-    <collision>
-      <origin xyz="0.095 0.009 -0.048" rpy="0 0 0"/>
-      <geometry><box size="0.05 0.17 0.05"/></geometry>
-    </collision>
-    <visual>
-      <origin xyz="0.01 0 -0.60" rpy="0 0 0"/>
-      <geometry><box size="0.10 0.08 1.40"/></geometry>
-      <material name="pole"><color rgba="0.75 0.75 0.78 1"/></material>
-    </visual>
-    <visual>
-      <origin xyz="0.02 0 0.27" rpy="0 0 0"/>
-      <geometry><sphere radius="0.16"/></geometry>
-      <material name="head"><color rgba="0.1 0.1 0.1 1"/></material>
-    </visual>
-    <visual>
-      <origin xyz="0.095 0.009 -0.048" rpy="0 0 0"/>
-      <geometry><box size="0.05 0.17 0.05"/></geometry>
-      <material name="camera"><color rgba="0.2 0.2 0.25 1"/></material>
-    </visual>
-  </link>
-
-  <xacro:ar_arm prefix="left_" parent="torso">
-    <origin xyz="0 ${half_gap} 0" rpy="${left_rpy}"/>
-  </xacro:ar_arm>
-  <!-- แขนขวา: J5 หมุนกลับทิศกับแขนซ้าย (ผู้ใช้ยืนยันจากของจริง 16 ต.ค. — ข้อมือประกอบกลับด้าน)
-       เฟิร์มแวร์ยังรายงานมุมแบบเดิม จึงกลับทิศแกนในโมเดลแทน ให้ RViz/MoveIt ตรงกับแขนจริง
-       ถ้าเจอข้ออื่นกลับทิศอีก ใส่ dirN="-1" เพิ่มตรงนี้ -->
-  <xacro:ar_arm prefix="right_" parent="torso" dir5="-1">
-    <origin xyz="0 ${-half_gap} 0" rpy="${right_rpy}"/>
-  </xacro:ar_arm>
-
-  <!-- ros2_control ของแต่ละแขน: ลิมิตเป็นตัวเลขจริง (ไฟล์ของผู้ขายเขียน {..} ไม่มี $ จึง parse ไม่ผ่าน) -->
-  <xacro:macro name="arm_joint" params="name lo hi init">
-    <joint name="${name}">
-      <command_interface name="position">
-        <param name="min">${lo * pi / 180}</param>
-        <param name="max">${hi * pi / 180}</param>
-      </command_interface>
-      <state_interface name="position">
-        <param name="initial_value">${init}</param>
-      </state_interface>
-    </joint>
-  </xacro:macro>
-
-  <xacro:macro name="arm_control" params="prefix hw port">
-    <ros2_control name="${prefix}arm" type="system">
-      <hardware>
-        <xacro:if value="${hw == 'real'}">
-          <plugin>ar_hardware_interface/ARHardwareInterface</plugin>
-          <param name="serial_port">${port}</param>
-          <param name="calibrate">False</param>
-        </xacro:if>
-        <xacro:unless value="${hw == 'real'}">
-          <plugin>mock_components/GenericSystem</plugin>
-        </xacro:unless>
-      </hardware>
-      <!-- initial_value = ท่าพักหลัง calibrate (ใช้ตอน mock) -->
-      <xacro:arm_joint name="${prefix}joint_1" lo="-170" hi="170" init="0.0"/>
-      <xacro:arm_joint name="${prefix}joint_2" lo="-42" hi="90" init="-0.1019"/>
-      <xacro:arm_joint name="${prefix}joint_3" lo="-89" hi="52" init="0.0"/>
-      <xacro:arm_joint name="${prefix}joint_4" lo="-165" hi="165" init="0.0"/>
-      <xacro:arm_joint name="${prefix}joint_5" lo="-105" hi="105" init="-0.9103"/>
-      <xacro:arm_joint name="${prefix}joint_6" lo="-155" hi="155" init="0.0"/>
-    </ros2_control>
-  </xacro:macro>
-
+  <xacro:humanoi_upper/>
   <xacro:arm_control prefix="left_" hw="$(arg left_hw)" port="$(arg left_port)"/>
   <xacro:arm_control prefix="right_" hw="$(arg right_hw)" port="$(arg right_port)"/>
 </robot>
