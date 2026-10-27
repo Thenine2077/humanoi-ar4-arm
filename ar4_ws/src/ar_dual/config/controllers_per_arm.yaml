@@ -1,0 +1,68 @@
+# ตัวคุมแยกแขนละโปรเซส (launch/arm_hardware.launch.py) — แขนหนึ่งปิด/คาลิเบรต/เปิดใหม่ได้โดยอีกแขนทำงานต่อ
+# ไดรเวอร์ของผู้ขายเปิดพอร์ต Teensy ตอนเริ่มและไม่ปล่อยจนโปรเซสจบ จึงต้องแยกโปรเซส (สั่งพักทีละแขนไม่ปล่อยพอร์ต)
+# ชื่อตัวคุมและ action เหมือนเดิม (/left_arm_controller/follow_joint_trajectory ...) — MoveIt / ตัวเล่นโปรแกรมไม่ต้องแก้
+# joint_state_broadcaster แยกต่อแขน ส่ง /<แขน>/joint_states แล้ว joint_state_publisher รวมเป็น /joint_states ครบ 12 ข้อ
+# (ซิม Gazebo ยังใช้ controllers.yaml ตัวคุมเดียว)
+left_controller_manager:
+  ros__parameters:
+    update_rate: 50
+    left_joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    left_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+right_controller_manager:
+  ros__parameters:
+    update_rate: 50
+    right_joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    right_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+left_arm_controller:
+  ros__parameters:
+    joints:
+      - left_joint_1
+      - left_joint_2
+      - left_joint_3
+      - left_joint_4
+      - left_joint_5
+      - left_joint_6
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.02
+      goal_time: 0.0
+      left_joint_1: { trajectory: 0.2, goal: 0.02 }
+      left_joint_2: { trajectory: 0.2, goal: 0.02 }
+      left_joint_3: { trajectory: 0.2, goal: 0.02 }
+      left_joint_4: { trajectory: 0.2, goal: 0.02 }
+      left_joint_5: { trajectory: 0.2, goal: 0.02 }
+      left_joint_6: { trajectory: 0.2, goal: 0.02 }
+
+right_arm_controller:
+  ros__parameters:
+    joints:
+      - right_joint_1
+      - right_joint_2
+      - right_joint_3
+      - right_joint_4
+      - right_joint_5
+      - right_joint_6
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.02
+      goal_time: 0.0
+      right_joint_1: { trajectory: 0.2, goal: 0.02 }
+      right_joint_2: { trajectory: 0.2, goal: 0.02 }
+      right_joint_3: { trajectory: 0.2, goal: 0.02 }
+      right_joint_4: { trajectory: 0.2, goal: 0.02 }
+      right_joint_5: { trajectory: 0.2, goal: 0.02 }
+      right_joint_6: { trajectory: 0.2, goal: 0.02 }

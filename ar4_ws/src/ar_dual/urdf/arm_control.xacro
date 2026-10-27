@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <!-- ros2_control ของแขน AR4 หนึ่งข้าง (ชื่อข้อต่อ ${prefix}joint_1..6) — ใช้ร่วมกันทั้งแขนจริงและซิม
   hw = real (Teensy ผ่านไดรเวอร์ของผู้ขาย) | mock (จำลอง ไม่ต่อบอร์ด) | gz (Gazebo ผ่าน gz_ros2_control)
+       | none (ไม่มี ros2_control ของแขนนี้ — ตัวคุมแยกแขนละตัว แต่ละตัวโหลดเฉพาะแขนตัวเอง)
   ลิมิตเป็นตัวเลขจริง (ไฟล์ของผู้ขายเขียน {..} ไม่มี $ จึง parse ไม่ผ่าน)
   initial_value = ท่าพักหลัง calibrate (ใช้ตอน mock / ซิม)
   ลิมิต / ท่าพัก = ค่าของผู้ขาย + ค่าชดเชยศูนย์ในบอร์ด (config/zero_trims.yaml) ของแขนนั้น
@@ -24,6 +25,7 @@
     <xacro:property name="zt" value="${[float(v) for v in zcfg.get(prefix[:-1], [0] * 6)]}"/>
     <!-- ท่าหลัง calibrate (after_calibrate มุมจริง องศา) แทนท่าพักของเฟิร์มแวร์ ในข้อที่กำหนด -->
     <xacro:property name="ac" value="${dict((int(k), float(v)) for k, v in ((zcfg.get('after_calibrate') or dict()).get(prefix[:-1]) or dict()).items())}"/>
+    <xacro:unless value="${hw == 'none'}">
     <ros2_control name="${prefix}arm" type="system">
       <hardware>
         <xacro:if value="${hw == 'real'}">
@@ -47,5 +49,6 @@
       <xacro:arm_joint name="${prefix}joint_5" lo="${-105 + zt[4]}" hi="${105 + zt[4]}" init="${ac[5] * pi / 180 if 5 in ac else -0.9103 + zt[4] * pi / 180}"/>
       <xacro:arm_joint name="${prefix}joint_6" lo="${-155 + zt[5]}" hi="${155 + zt[5]}" init="${ac[6] * pi / 180 if 6 in ac else 0.0 + zt[5] * pi / 180}"/>
     </ros2_control>
+    </xacro:unless>
   </xacro:macro>
 </robot>

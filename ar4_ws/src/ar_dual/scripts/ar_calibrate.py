@@ -181,6 +181,10 @@ def main():
                  "หรือใช้ all ถ้ายอมให้หมุนพร้อมกัน")
     if fw not in ("JVseq2", "JVseq3"):
         print("หมายเหตุ: เฟิร์มแวร์นี้ไม่ใช่ v2/v3 — ถ้าข้อไหนหาสวิตช์ไม่เจอ บอร์ดจะค้างจนกว่าจะปิดไฟแขน", flush=True)
+    if arm and fw in ("JVseq2", "JVseq3"):  # พอร์ตมาจากที่จำไว้ได้ (อีกแขนเปิดอยู่ ถามทุกบอร์ดไม่ได้) — เช็กชื่อก่อนขยับ
+        name = ask(ser, b"JN\n", "JN")[2:].strip()
+        if name != arm:
+            sys.exit(f"✗ บอร์ดที่ {path} ชื่อ '{name or 'ไม่มีชื่อ'}' ไม่ใช่แขน {arm} — ไม่ calibrate (ดู arm ports ตอนระบบแขนปิด)")
     missing = sorted(set("123456") - set("".join(groups))) if groups != [""] else []
     if missing:
         print("หมายเหตุ: ข้อ " + ", ".join(f"J{c}" for c in missing) + " ไม่ได้ calibrate รอบนี้ "

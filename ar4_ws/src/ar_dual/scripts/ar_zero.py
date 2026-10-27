@@ -73,6 +73,10 @@ def main():
         fw = ask(ser, b"JV\n", "JV")
         if not fw:
             sys.exit(f"บอร์ดที่ {port} ไม่ตอบ JV — ไม่ใช่เฟิร์มแวร์ AR4_ROS2_seq หรือค้างอยู่ (ปิด-เปิดไฟแขน)")
+        name = ask(ser, b"JN\n", "JN")[2:].strip()
+        if fw >= "JVseq2" and name != arm:  # กันพอร์ตที่จำไว้ผิดแขน (สองบอร์ดหมายเลข USB ซ้ำกัน)
+            print(f"✗ บอร์ดที่ {port} ชื่อ '{name or 'ไม่มีชื่อ'}' ไม่ใช่แขน {arm} — ดู arm ports (ตอนระบบแขนปิด)")
+            return 1
         if fw < "JVseq3":
             if all(abs(v) <= TOL for v in want):
                 print(f"แขน{arm}: เฟิร์มแวร์ {fw[2:]} ไม่มีค่าชดเชยศูนย์ — ไฟล์ก็ไม่มี ✓")
