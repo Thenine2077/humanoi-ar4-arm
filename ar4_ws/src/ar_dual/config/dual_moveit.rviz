@@ -1,12 +1,12 @@
 Panels:
   - Class: rviz_common/Displays
-    Help Height: 87
+    Help Height: 70
     Name: Displays
     Property Tree Widget:
       Expanded:
         - /Global Options1
       Splitter Ratio: 0.4957627058029175
-    Tree Height: 363
+    Tree Height: 70
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -41,7 +41,7 @@ Visualization Manager:
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
       Value: true
-    - Acceleration_Scaling_Factor: 0.3
+    - Acceleration_Scaling_Factor: 1
       Class: moveit_rviz_plugin/MotionPlanning
       Enabled: true
       Move Group Namespace: ""
@@ -72,45 +72,91 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          base_link:
+          left_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_1:
+          left_hand:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_2:
+          left_link_1:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_3:
+          left_link_2:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_4:
+          left_link_3:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_5:
+          left_link_4:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_6:
+          left_link_5:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          world:
+          left_link_6:
             Alpha: 1
             Show Axes: false
             Show Trail: false
+            Value: true
+          right_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_hand:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_4:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_5:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_6:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          torso:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
         Loop Animation: false
         Robot Alpha: 0.5
         Robot Color: 150; 50; 150
@@ -157,50 +203,96 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          base_link:
+          left_base_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_1:
+          left_hand:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_2:
+          left_link_1:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_3:
+          left_link_2:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_4:
+          left_link_3:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_5:
+          left_link_4:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          link_6:
+          left_link_5:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          world:
+          left_link_6:
             Alpha: 1
             Show Axes: false
             Show Trail: false
+            Value: true
+          right_base_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_hand:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_1:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_2:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_3:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_4:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_5:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          right_link_6:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          torso:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
         Robot Alpha: 1
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
-      Velocity_Scaling_Factor: 0.3
+      Velocity_Scaling_Factor: 1
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -247,36 +339,37 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.913306713104248
+      Distance: 1.4035128355026245
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.03893722593784332
-        Y: -0.057540345937013626
-        Z: 0.0855453610420227
+        X: 0.010252851992845535
+        Y: 0.4521414637565613
+        Z: -0.1565319150686264
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.45539820194244385
+      Pitch: 0.07910175621509552
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.973586082458496
+      Yaw: 0.0560525543987751
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 995
+  Height: 1026
   Hide Left Dock: false
   Hide Right Dock: false
   MotionPlanning:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000002b4000003acfc0200000006fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000003f00fffffffb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000003b000001750000016a00fffffffb000000100044006900730070006c00610079007301000001b6000000c7000000c700fffffffb0000001200530065006c0065006300740069006f006e01000002830000005c0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007301000002e50000005c0000005c00fffffffb0000000a005600690065007700730100000347000000a0000000a000ffffff000004c6000003ac00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Tool Properties:
@@ -284,5 +377,5 @@ Window Geometry:
   Views:
     collapsed: false
   Width: 1920
-  X: -32
-  Y: -32
+  X: 0
+  Y: 62

@@ -4,6 +4,8 @@
   ar_zero.py <พอร์ต> <left|right>            เช็กว่าบอร์ดตรงกับไฟล์ (ตรง = exit 0, ไม่ตรง = exit 1)
   ar_zero.py <พอร์ต> <left|right> --apply    เขียนค่าจากไฟล์ลงบอร์ด (เก็บใน EEPROM ปิดไฟไม่หาย)
 
+ค่าชดเชยตรงแล้วตั้งเพดานความเร็วมอเตอร์จาก config/joint_speed.yaml ลงบอร์ดด้วย (คำสั่ง SS — หายเมื่อบอร์ดรีบูต
+arm start / recal / reconnect จึงเรียกตัวนี้ก่อนเปิดตัวคุมทุกครั้ง)
 ระบบแขน (ros2_control) ต้องปิดอยู่ — พอร์ตใช้ได้ทีละโปรแกรม และค่าที่เปลี่ยนมีผลทันทีกับตัวเลขที่บอร์ดรายงาน
 ไม่ขยับแขน (แค่ถาม/ตั้งค่า)
 """
@@ -17,12 +19,47 @@ import yaml
 TOL = 0.01  # องศา (บอร์ดเก็บละเอียด 0.01°)
 
 
-def trims_file():
+def config_file(name):
     try:
         from ament_index_python.packages import get_package_share_directory
-        return os.path.join(get_package_share_directory("ar_dual"), "config", "zero_trims.yaml")
+        return os.path.join(get_package_share_directory("ar_dual"), "config", name)
     except Exception:  # รันนอก ROS (ทดสอบบน PC) — อ่านจากโฟลเดอร์ต้นฉบับข้างสคริปต์
-        return os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "config", "zero_trims.yaml")
+        return os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "config", name)
+
+
+def trims_file():
+    return config_file("zero_trims.yaml")
+
+
+def speed_command():
+    """คำสั่ง SS จาก config/joint_speed.yaml -> (bytes, [speed J1..J6]) · ไฟล์ไม่มี = (None, None)
+
+    เฟิร์มแวร์แยกค่าด้วยตัวอักษร A..L: J1 ความเร็ว A ความเร่ง B, J2 C/D ... J6 K/L (ทศนิยมธรรมดา ห้ามมี e)"""
+    path = config_file("joint_speed.yaml")
+    if not os.path.exists(path):
+        return None, None
+    with open(path, encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    speed = [float(v) for v in cfg.get("speed", [])]
+    accel = [float(v) for v in cfg.get("accel", [])]
+    if len(speed) != 6 or len(accel) != 6 or min(speed + accel) <= 0:
+        sys.exit(f"{path}: speed / accel ต้องมีค่าบวก 6 ค่า (J1..J6)")
+    body = "".join(f"{'ABCDEFGHIJKL'[2 * i]}{s:.3f}{'ABCDEFGHIJKL'[2 * i + 1]}{a:.3f}"
+                   for i, (s, a) in enumerate(zip(speed, accel)))
+    return f"SS{body}\n".encode(), speed
+
+
+def set_speed(ser, arm=""):
+    """ตั้งเพดานความเร็วในบอร์ด (ไม่ขยับแขน — บอร์ดตอบตำแหน่ง JP กลับมา) คืน True ถ้าบอร์ดรับ"""
+    cmd, speed = speed_command()
+    if cmd is None:
+        return True
+    if not ask(ser, cmd, "JP"):
+        print(f"⚠ แขน{arm}: บอร์ดไม่ตอบคำสั่งตั้งความเร็ว (SS) — ข้อ 1 ยังใช้เพดานเดิมของเฟิร์มแวร์ 30°/s", flush=True)
+        return False
+    slow = " ".join(f"J{i + 1} {v:g}°/s" for i, v in enumerate(speed) if v < 30) or "ทุกข้อ 30°/s"
+    print(f"แขน{arm}: ตั้งเพดานความเร็วมอเตอร์ในบอร์ดแล้ว — {slow} (config/joint_speed.yaml) ✓", flush=True)
+    return True
 
 
 def wanted(arm):
@@ -80,6 +117,7 @@ def main():
         if fw < "JVseq3":
             if all(abs(v) <= TOL for v in want):
                 print(f"แขน{arm}: เฟิร์มแวร์ {fw[2:]} ไม่มีค่าชดเชยศูนย์ — ไฟล์ก็ไม่มี ✓")
+                set_speed(ser, arm)
                 return 0
             print(f"✗ แขน{arm}: ไฟล์ต้องการค่าชดเชย {fmt(want)} แต่บอร์ดเป็นเฟิร์มแวร์ {fw[2:]} (ไม่มี JZ)\n"
                   "  แฟลช AR4_ROS2_seq v3 ก่อน แล้ว arm zero " + arm)
@@ -91,9 +129,10 @@ def main():
         have = parse(line)
         if have is None:
             sys.exit(f"บอร์ดตอบ JZ ไม่ถูกรูปแบบ: {line!r}")
-    if all(abs(h - w) <= TOL for h, w in zip(have, want)):
-        print(f"แขน{arm}: ค่าชดเชยศูนย์ในบอร์ด {fmt(have)} ตรงกับไฟล์ ✓" + (" (เขียนแล้ว)" if apply else ""))
-        return 0
+        if all(abs(h - w) <= TOL for h, w in zip(have, want)):
+            print(f"แขน{arm}: ค่าชดเชยศูนย์ในบอร์ด {fmt(have)} ตรงกับไฟล์ ✓" + (" (เขียนแล้ว)" if apply else ""))
+            set_speed(ser, arm)
+            return 0
     print(f"✗ แขน{arm}: ค่าชดเชยศูนย์ในบอร์ด {fmt(have)} ไม่ตรงกับไฟล์ {fmt(want)}\n"
           f"  ตัวเลขข้อต่อจะคลาดจากท่าที่สอนไว้ — เขียนค่าจากไฟล์: arm zero {arm}")
     return 1

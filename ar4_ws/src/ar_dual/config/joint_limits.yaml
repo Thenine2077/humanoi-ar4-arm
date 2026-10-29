@@ -1,62 +1,68 @@
-# เหมือน ar_moveit_config/config/joint_limits.yaml ของผู้ขาย (30°/s, 10°/s²) แค่เติม left_/right_
+# ความเร็ว / ความเร่งสูงสุดที่ MoveIt วางแผนให้แขนจริง (rad/s, rad/s²) — เป็นค่าที่แขนวิ่งจริงตอน Velocity /
+# Acceleration Scaling ใน RViz = 1.0 (dual_moveit.rviz ตั้งไว้ 1.0) ลดสเกลลง = ช้าลง เพิ่มเกิน 1.0 ไม่ได้
+#
+# 2026-10-29: เดิมเป็นค่าผู้ขาย 30°/s, 10°/s² (= เพดานเฟิร์มแวร์ — วิ่งเต็มเพดานแขนตามไม่ทัน) แล้วให้ RViz คูณ 0.3
+#   ตอนนี้ใส่ค่าที่คูณแล้วลงไฟล์ตรงๆ: 0.157 rad/s (9°/s), 0.0524 rad/s² (3°/s²) — ข้อ 2-6 วิ่งเหมือนเดิมทุกอย่าง
+#   ข้อ 1: 0.19 rad/s (10.9°/s) = ความเร็ว J1 ตอน calibrate ที่ไม่เคยรูด ต่ำกว่าเพดานในบอร์ด 11.25 (joint_speed.yaml)
+#   สายพาน J1 เคยรูด — ห้ามตั้งข้อ 1 เกิน 0.19 (บอร์ดตามไม่ทัน ตัวคุมยกเลิกกลางทาง)
 joint_limits:
   left_joint_1:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.19
   left_joint_2:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   left_joint_3:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   left_joint_4:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   left_joint_5:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   left_joint_6:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   right_joint_1:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.19
   right_joint_2:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   right_joint_3:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   right_joint_4:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   right_joint_5:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157
   right_joint_6:
     has_acceleration_limits: true
-    max_acceleration: 0.174533
+    max_acceleration: 0.0524
     has_velocity_limits: true
-    max_velocity: 0.5236
+    max_velocity: 0.157

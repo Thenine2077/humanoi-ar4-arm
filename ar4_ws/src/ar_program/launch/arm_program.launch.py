@@ -40,7 +40,7 @@ def generate_launch_description():
         DeclareLaunchArgument("arm_ns", default_value="",
                               description="(single เท่านั้น) namespace ของแขน ('' = ซิม/แขนเดี่ยว, real = แขนจริงในชุด dual_real_sim)"),
         DeclareLaunchArgument("speed", default_value="0.19",
-                              description="ความเร็วช่วงวิ่งคงที่ rad/s (0.19 ≈ 11°/วิ = J1 ตอน calibrate, เพดาน 0.22)"),
+                              description="ความเร็วช่วงวิ่งคงที่ rad/s (0.19 ≈ 11°/วิ = J1 ตอน calibrate = เพดาน)"),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"]),
         OpaqueFunction(function=setup),
     ])

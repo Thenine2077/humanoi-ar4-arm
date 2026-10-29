@@ -27,6 +27,8 @@ import time
 import serial
 import yaml
 
+from ar_zero import set_speed  # ar_zero.py อยู่โฟลเดอร์เดียวกัน (ตั้งเพดานความเร็วจาก config/joint_speed.yaml)
+
 TIMEOUT = 300  # วินาที ต่อกลุ่ม — ทั้ง 6 ข้อพร้อมกันปกติ ~2 นาที
 # มุม ROS = มุมที่บอร์ดรายงาน + ค่านี้ (joint_offsets_ ในไดรเวอร์ของผู้ขาย ar_hardware_interface.cpp)
 DRIVER_OFFSETS = [170.0, -42.0, -89.0, -165.0, -105.0, -155.0]
@@ -52,7 +54,7 @@ def board_joints(ser):
 
 
 def go_after_calibrate(ser, arm, calibrated):
-    """หมุนข้อที่เพิ่ง calibrate ไปท่าใน after_calibrate (ทีละข้อ ความเร็วตั้งต้นของเฟิร์มแวร์ 30°/s)"""
+    """หมุนข้อที่เพิ่ง calibrate ไปท่าใน after_calibrate (ทีละข้อ ด้วยเพดานความเร็วในบอร์ด config/joint_speed.yaml)"""
     for j, deg in sorted(after_calibrate(arm).items()):
         if str(j + 1) not in calibrated:
             continue
@@ -189,6 +191,8 @@ def main():
     if missing:
         print("หมายเหตุ: ข้อ " + ", ".join(f"J{c}" for c in missing) + " ไม่ได้ calibrate รอบนี้ "
               "(ตำแหน่งข้อนั้นยังเป็นค่าเดิม — ถ้าเพิ่งเปิดไฟแขน ต้อง calibrate ให้ครบก่อนใช้งาน)", flush=True)
+    # ตั้งเพดานความเร็วก่อนหมุน — ขากลับท่าพักหลังเจอสวิตช์ใช้เพดานนี้ (J1 เดิม 30°/s ผ่านแนวนอนเต็มสปีด)
+    set_speed(ser, arm or "")
     for group in groups:
         ser = calibrate_group(ser, path, group)
     print("calibrate ครบตามที่สั่งแล้ว", flush=True)

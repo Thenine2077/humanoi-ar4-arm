@@ -8,6 +8,7 @@
   ros2 run ar_program teach --program grab act1/- -/-/rock act2/-/paper     # มีท่ามือ
   ros2 run ar_program teach --delete <ชื่อท่า> --arm right
   ros2 run ar_program teach --delete-program <ชื่อโปรแกรม>
+  ros2 run ar_program teach --j1-load [--arm right]           # ภาระน้ำหนักที่ J1 ของทุกท่า (arm j1-load)
 
 ขั้นของโปรแกรม: <ท่าแขนซ้าย>/<ท่าแขนขวา>[/<มือซ้าย>[/<มือขวา>]] — ใช้ - (หรือ still) ถ้าไม่ขยับในขั้นนั้น
   ท่ามือ: rock paper scissors point like windup victory nonono relax · wait=วินาที = รอ
@@ -19,14 +20,14 @@
   --layout  dual (ค่าเริ่ม ar_dual สองแขน) | single (แขนเดี่ยวแบบเดิม ข้อต่อ joint_N — ใช้กับซิมบน PC)
 
 Jog แขนให้ได้ท่าก่อน (RViz: Planning Group เลือกแขน -> แท็บ Joints หรือลากลูกบอล -> Plan & Execute)
-แล้วค่อยสั่ง teach
+แล้วค่อยสั่ง teach — บันทึกแล้วบอกภาระน้ำหนักที่ J1 (j1_load.py) เกิน 100% ของตอน calibrate = เสี่ยงสายพาน J1 รูด
 """
 import argparse
 import math
 import sys
 import time
 
-from ar_program import programs
+from ar_program import j1_load, programs
 
 ARM_TH = {"left": "ซ้าย", "right": "ขวา"}
 
@@ -36,24 +37,66 @@ def deg(values):
 
 
 def read_current(topic, names, timeout=5.0):
+    """ท่าปัจจุบัน (rad) + โมเดลหุ่นจาก /robot_description (ไว้คำนวณภาระ J1 — ไม่ได้ = None)"""
     import rclpy
+    from rclpy.qos import DurabilityPolicy, QoSProfile
     from sensor_msgs.msg import JointState
+    from std_msgs.msg import String
 
     rclpy.init()
     node = rclpy.create_node("ar_program_teach")
-    got = {}
+    got, urdf = {}, []
     node.create_subscription(
         JointState, topic,
         lambda m: got.update(dict(zip(m.name, m.position))), 10)
+    node.create_subscription(String, "/robot_description", lambda m: urdf.append(m.data),
+                             QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
     end = time.monotonic() + timeout
     while time.monotonic() < end and not all(j in got for j in names):
+        rclpy.spin_once(node, timeout_sec=0.1)
+    end = time.monotonic() + 1.0
+    while time.monotonic() < end and not urdf:
         rclpy.spin_once(node, timeout_sec=0.1)
     node.destroy_node()
     rclpy.shutdown()
     if not all(j in got for j in names):
         missing = [j for j in names if j not in got]
         sys.exit(f"ไม่ได้รับ {topic} ครบภายใน {timeout:.0f} วินาที (ขาด {missing}) — ระบบแขนเปิดอยู่ไหม")
-    return [got[j] for j in names]
+    return [got[j] for j in names], (urdf[0] if urdf else None)
+
+
+def j1_note(loader, arm, values):
+    """ข้อความภาระ J1 ของท่าที่เพิ่งบันทึก"""
+    pct = loader.percent(arm, values)
+    sweep = loader.sweep_percent(arm, values)
+    if not j1_load.over(pct):
+        line = f"ภาระน้ำหนักที่ J1: {pct:.0f}% ของตอน calibrate ✓"
+    else:
+        line = (f"⚠ ภาระน้ำหนักที่ J1: {pct:.0f}% ของตอน calibrate (เกิน 100%) — ท่านี้แขนยื่นห่างแกน J1 มาก "
+                f"เสี่ยงสายพาน J1 รูด\n  ลองหุบแขนเข้า (ลด J2 / งอ J3 เข้าหาตัว) แล้วสอนชื่อเดิมซ้ำ · "
+                f"ดูทุกท่า: arm j1-load {arm}")
+    if j1_load.over(sweep):
+        line += (f"\n  ถ้าหมุน J1 ไกลๆ ตอนแขนอยู่รูปร่างนี้ ภาระขึ้นถึง {sweep:.0f}% — "
+                 "พับแขนก่อนแล้วค่อยหมุน J1 จะเบากว่า")
+    return line
+
+
+def print_j1_table(loader, data, arms):
+    print("ภาระน้ำหนักที่ J1 ของท่าที่สอนไว้ — 100% = ตอน calibrate (J1 หมุนผ่านแนวนอนไม่เคยรูด)")
+    print("มวลจากโมเดล (ค่า AR3 + มือ) เทียบกันได้เป็น % เท่านั้น · ค้างท่า = ที่ท่านั้น · "
+          "หมุน J1 = ถ้า J1 หมุนทั้งช่วงด้วยรูปแขนนี้")
+    for arm in arms:
+        poses = data["poses"][arm]
+        if not poses or not loader.has_arm(arm):
+            continue
+        rows = sorted(((loader.percent(arm, v), loader.sweep_percent(arm, v), n, v) for n, v in poses.items()),
+                      key=lambda r: -r[0])
+        w = max(len(n) for n in poses)
+        print(f"\nแขน{ARM_TH[arm]} ({len(rows)} ท่า)")
+        print("  " + "pose".ljust(w) + "     J1     J2     J3   ค้างท่า   หมุน J1")
+        for pct, sweep, name, v in rows:
+            print(f"  {name:<{w}} {math.degrees(v[0]):6.0f} {math.degrees(v[1]):6.0f} {math.degrees(v[2]):6.0f}"
+                  f"   {pct:6.0f}%   {sweep:6.0f}%   {j1_load.label(pct)}")
 
 
 def print_table(data, name):
@@ -81,6 +124,7 @@ def main():
     ap.add_argument("--delete", metavar="ชื่อท่า")
     ap.add_argument("--delete-program", metavar="ชื่อโปรแกรม")
     ap.add_argument("--hand-names", action="store_true", help="พิมพ์ชื่อท่ามือที่สั่งได้ (ท่าในตัว + ท่าที่สอนเอง)")
+    ap.add_argument("--j1-load", action="store_true", help="ภาระน้ำหนักที่ J1 ของทุกท่า (--arm = แขนเดียว)")
     # ros2 run ส่ง --ros-args มาด้วยบางครั้ง ตัดทิ้งก่อน parse
     argv = sys.argv[1:]
     if "--ros-args" in argv:
@@ -111,6 +155,11 @@ def main():
 
     if args.hand_names:
         print("\n".join(sorted(programs.hand_names(data))))
+        return
+
+    if args.j1_load:
+        arms = [programs.arm_of(args.arm)] if args.arm else list(programs.ARMS)
+        print_j1_table(j1_load.J1Load(j1_load.urdf_text()), data, arms)
         return
 
     if args.list:
@@ -183,7 +232,7 @@ def main():
         return
 
     arm = need_arm()
-    values = read_current(args.topic, programs.joint_names(arm, args.layout))
+    values, urdf = read_current(args.topic, programs.joint_names(arm, args.layout))
     try:
         programs.check_pose(args.name, values, arm)
     except programs.ProgramError as exc:
@@ -195,6 +244,14 @@ def main():
         print(f"แทนที่ท่า '{args.name}' ของแขน{ARM_TH[arm]}\n  เดิม {deg(old)}\n  ใหม่ {deg(values)}")
     else:
         print(f"บันทึกท่า '{args.name}' ของแขน{ARM_TH[arm]} {deg(values)}")
+    if args.layout == "dual":
+        try:
+            loader = j1_load.J1Load(urdf or j1_load.urdf_text())
+            if old:
+                print(f"  ภาระ J1 เดิม {loader.percent(arm, old):.0f}%")
+            print(j1_note(loader, arm, values))
+        except Exception as exc:  # คำนวณไม่ได้ไม่ใช่เหตุให้บันทึกไม่ได้
+            print(f"(คำนวณภาระ J1 ไม่ได้: {exc})")
 
 
 if __name__ == "__main__":

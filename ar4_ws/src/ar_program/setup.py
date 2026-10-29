@@ -25,6 +25,8 @@ setup(
         "console_scripts": [
             "arm_program = ar_program.player:main",
             "teach = ar_program.teach:main",
+            "motion_log = ar_program.motion_log:main",
+            "broke = ar_program.broke:main",
         ],
     },
 )

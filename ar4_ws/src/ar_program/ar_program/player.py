@@ -24,8 +24,9 @@
   sync                true = แขนที่ขยับในขั้นเดียวกันถึงพร้อมกัน (แขนที่ไปใกล้กว่าวิ่งช้าลง)
   speed               ความเร็วช่วงวิ่งคงที่ของข้อต่อที่ไปไกลสุด rad/s (ค่าเริ่ม 0.4 แต่ถูกจำกัดที่ max_speed)
   accel               อัตราเร่ง/เบรก rad/s^2 (0.08 ≈ 4.6°/s^2 — สายพาน J1 เคยรูดตอนแขนยื่นไกลแล้วเร่ง/หยุดแรง)
-  max_speed           เพดานของ speed (0.22) — เฟิร์มแวร์ตามหลังเป้าราว v^2/(2·10°/s^2) ถ้าเกิน 0.22
-                      จะตามหลังเกิน path tolerance 0.2 rad ของ controller แล้วโดน abort กลางทาง
+  max_speed           เพดานของ speed (0.19 = ความเร็ว J1 ตอน calibrate) — บอร์ดจำกัด J1 ไว้ 11.25°/s
+                      (ar_dual/config/joint_speed.yaml) สั่งเร็วกว่านี้แขนตามไม่ทันจนเกิน path tolerance
+                      0.2 rad ของ controller แล้วโดน abort กลางทาง (เดิม 0.22 ก่อนจำกัด J1 ในบอร์ด)
   min_move_time       เวลาขั้นต่ำต่อท่า วินาที (กันสั่งกระชากตอนท่าห่างกันนิดเดียว)
 
 ทุกขั้น แขนที่มีท่าเริ่มพร้อมกัน แขนที่ still ไม่ถูกสั่ง (ค้างอยู่ที่เดิม) ขั้นถัดไปเริ่มเมื่อทุกแขนถึงแล้ว
@@ -78,7 +79,7 @@ class ArmProgram(Node):
         self.declare_parameter("sync", True)
         self.declare_parameter("speed", 0.4)
         self.declare_parameter("accel", 0.08)
-        self.declare_parameter("max_speed", 0.22)
+        self.declare_parameter("max_speed", 0.19)
         self.declare_parameter("min_move_time", 1.0)
         self.declare_parameter("left_hand_topic", "/hand/gesture")
         self.declare_parameter("right_hand_topic", "/right_hand/gesture")

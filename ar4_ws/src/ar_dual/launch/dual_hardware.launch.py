@@ -10,6 +10,7 @@
 ตัวคุม: /left_arm_controller/follow_joint_trajectory, /right_arm_controller/follow_joint_trajectory
 ข้อต่อ: left_joint_1..6, right_joint_1..6 · TF: torso -> left_base_link / right_base_link -> ...
 ไม่ calibrate ที่นี่ — calibrate ก่อนด้วย ar_calibrate.py (arm calibrate left|right) แล้วค่อยเปิดตัวนี้
+motion_log (ar_program) จดทุกการขยับไว้ให้ arm broke ดึงไปเก็บตอนเกิดเรื่อง (สายพานรูด ชน ...)
 พอร์ตต้องอ้างด้วย /dev/serial/by-path: Teensy ทั้งสองตัวรายงานหมายเลขเดียวกัน by-id จึงแยกไม่ได้
 """
 from launch import LaunchDescription
@@ -51,4 +52,5 @@ def generate_launch_description():
                  parameters=[{"source_list": ["/left/joint_states", "/right/joint_states"], "rate": 50.0}]),
             arm("left"),
             arm("right"),
+            Node(package="ar_program", executable="motion_log", output="log"),
         ])
