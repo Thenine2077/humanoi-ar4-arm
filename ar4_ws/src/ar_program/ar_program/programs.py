@@ -68,9 +68,13 @@ def zero_trims():
     if _TRIMS is None:
         try:
             from ament_index_python.packages import PackageNotFoundError, get_package_share_directory
-            path = os.path.join(get_package_share_directory("ar_dual"), "config", "zero_trims.yaml")
-        except (ImportError, PackageNotFoundError):
+        except ImportError:  # รันนอก ROS (เช่น python ของ Windows)
             path = None
+        else:
+            try:
+                path = os.path.join(get_package_share_directory("ar_dual"), "config", "zero_trims.yaml")
+            except PackageNotFoundError:
+                path = None
         trims = {}
         if path:  # มีแพ็กเกจแต่อ่านไฟล์ไม่ได้ = ให้พังดังๆ (ลิมิตผิดฝั่งอาจสั่งแขนเลยสวิตช์)
             with open(path, encoding="utf-8") as f:
