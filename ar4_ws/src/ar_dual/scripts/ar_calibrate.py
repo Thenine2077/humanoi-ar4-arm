@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""calibrate แขน AR4 หนึ่งตัว (เฟิร์มแวร์ ROS) นอก ROS — ทีละข้อต่อตามลำดับที่เลือก หรือทั้งหมดพร้อมกัน
+"""calibrate แขน AR4 หนึ่งตัว (เฟิร์มแวร์ ROS) นอก ROS — ทีละข้อต่อตามลำดับที่เลือก
 
-  ar_calibrate.py <พอร์ต Teensy> 6 5 4 1 2 3     # ทีละข้อ ตามลำดับ (แต่ละข้อหาสวิตช์ -> ถอย -> กลับท่าพัก)
+  ar_calibrate.py <พอร์ต Teensy> --arm right --step 6 5 4 2 3 1   # ทีละขั้น หยุดรอ Enter ก่อนทุกขั้น
   ar_calibrate.py <พอร์ต Teensy> 5               # ข้อเดียว (ไว้ไล่ดูว่าข้อไหนพามือไปชน)
   ar_calibrate.py <พอร์ต Teensy> 456 123         # กลุ่มละหลายข้อพร้อมกัน
-  ar_calibrate.py <พอร์ต Teensy> all             # 6 ข้อพร้อมกันแบบต้นฉบับ (มือที่ติดปลายแขนอาจชน)
-  ar_calibrate.py <พอร์ต Teensy> --arm left 6 5 4 1 2 3   # + หลังเสร็จหมุนข้อไปท่าใน after_calibrate
-  (arm calibrate left|right ... เรียกตัวนี้ให้ พร้อม --arm)
+  ar_calibrate.py <พอร์ต Teensy> together        # 6 ข้อพร้อมกันแบบต้นฉบับ — ห้ามใช้ตอนติดมือ (ข้อ 5 กับ 6
+                                                 #   ถึงปลายพร้อมกัน มือพับเข้าหาแขน)
+  (arm calibrate left|right [ข้อ... | all] เรียกตัวนี้ให้ พร้อม --arm --step · all = ลำดับใน scripts/arm.sh)
 
-หลัง calibrate: ข้อที่เพิ่ง calibrate และมีใน after_calibrate ของ config/zero_trims.yaml (มุมจริง องศา เช่น
-left: {5: 0} = ข้อ 5 ตรง) จะหมุนไปมุมนั้นต่อ — ท่าพักของเฟิร์มแวร์ (ต้นฉบับ) ข้อ 5 งออยู่ ใช้ดูยาก
-  บน Windows ใช้ชื่อ COM ได้ตรงๆ:  python ar_calibrate.py COM9 6 5 4 1 2 3   (ต้องมี pyserial)
+แต่ละขั้น: ข้อนั้นหาสวิตช์ -> ถอย -> ท่าพักเฟิร์มแวร์ -> (มี --arm) หมุนต่อไปท่าใน after_calibrate ของ
+config/zero_trims.yaml (มุมจริง องศา เช่น right: {5: 0} = ข้อ 5 ตรง) ทันที ก่อนเริ่มขั้นถัดไป
+— ข้อมือตรงก่อนหมุนข้อ 4/6 มือจึงหมุนอยู่ในแนวแขน ไม่กวาดเข้าหาตัวแขน (ท่าพักเฟิร์มแวร์ข้อ 5 งออยู่ ~52°)
+--step: แสดงว่าขั้นนี้ข้อไหนจะหมุนไปทางไหน แล้วรอ Enter (Ctrl+C ตอนรอ = หยุดก่อนขั้นนั้น แขนไม่ขยับต่อ)
+  ระหว่างข้อกำลังหมุน Ctrl+C หยุดแขนไม่ได้ (บอร์ดทำต่อจนจบเอง) — จะหยุดต้องปิดไฟแขน
+  บน Windows ใช้ชื่อ COM ได้ตรงๆ:  python ar_calibrate.py COM9 --arm left --step 6 5 4 2 3 1   (ต้องมี pyserial)
 
 เลือกข้อได้ต้องใช้เฟิร์มแวร์ AR4_ROS2_seq (C:\\ar4_fw\\AR4_ROS2_seq) — ตัวนี้ถาม JV ก่อน ต้นฉบับไม่ตอบ JV และ
 ถ้าได้ JC5 จะ calibrate ทั้ง 6 ข้อพร้อมกัน จึงไม่ส่งเลือกข้อให้เฟิร์มแวร์ต้นฉบับเด็ดขาด
@@ -33,18 +36,36 @@ TIMEOUT = 300  # วินาที ต่อกลุ่ม — ทั้ง 6 
 # มุม ROS = มุมที่บอร์ดรายงาน + ค่านี้ (joint_offsets_ ในไดรเวอร์ของผู้ขาย ar_hardware_interface.cpp)
 DRIVER_OFFSETS = [170.0, -42.0, -89.0, -165.0, -105.0, -155.0]
 AXES = "ABCDEF"
+# ปลายที่แต่ละข้อวิ่งไปหาสวิตช์ (มุม ROS องศา ก่อนบวกค่าชดเชยศูนย์) — จากเฟิร์มแวร์: CAL_DIR + ENC_MAX_AT_ANGLE_MIN
+CAL_END = [-170.0, -42.0, 52.0, -165.0, -105.0, 155.0]
+# ท่าพักที่เฟิร์มแวร์พากลับหลังเจอสวิตช์ (REST_ENC_POSITIONS เป็นมุม ROS องศา ก่อนบวกค่าชดเชยศูนย์)
+FW_REST = [0.0, -6.0, -0.4, 0.0, -52.5, -0.6]
+JOINT_TH = ["หัวไหล่ (หมุนทั้งแขน)", "ต้นแขน", "ข้อศอก", "บิดแขนท่อนล่าง", "ข้อมือพับ", "หมุนมือ"]
 
 
-def after_calibrate(arm):
-    """{ข้อ 0-5: มุมจริง องศา} จาก after_calibrate ใน config/zero_trims.yaml ของแขนนั้น"""
+def arm_config(arm):
+    """(ค่าชดเชยศูนย์ J1..J6 องศา, {ข้อ 0-5: มุมจริงหลัง calibrate}) จาก config/zero_trims.yaml ของแขนนั้น"""
     try:
         from ament_index_python.packages import get_package_share_directory
         path = os.path.join(get_package_share_directory("ar_dual"), "config", "zero_trims.yaml")
     except Exception:  # รันนอก ROS — อ่านจากโฟลเดอร์ต้นฉบับข้างสคริปต์
         path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "config", "zero_trims.yaml")
     with open(path, encoding="utf-8") as f:
-        pose = ((yaml.safe_load(f) or {}).get("after_calibrate") or {}).get(arm) or {}
-    return {int(j) - 1: float(v) for j, v in pose.items()}
+        cfg = yaml.safe_load(f) or {}
+    trim = [float(v) for v in cfg.get(arm) or [0] * 6]
+    pose = (cfg.get("after_calibrate") or {}).get(arm) or {}
+    return trim, {int(j) - 1: float(v) for j, v in pose.items()}
+
+
+def describe(group, trim, after):
+    """บรรทัดบอกว่าขั้นนี้แต่ละข้อจะหมุนไปทางไหน (มุมจริงโดยประมาณ — ใช้ค่าชดเชยในไฟล์)"""
+    lines = []
+    for c in group or "123456":
+        j = int(c) - 1
+        back = after.get(j, FW_REST[j] + trim[j])
+        lines.append(f"   ข้อ {j + 1} {JOINT_TH[j]}: วิ่งหาสวิตช์ทาง ≈{round(CAL_END[j] + trim[j]):+d}° → ถอย → "
+                     f"ไปที่ {round(back):+d}°")
+    return "\n".join(lines)
 
 
 def board_joints(ser):
@@ -53,28 +74,40 @@ def board_joints(ser):
     return [float(vals[a]) for a in AXES] if len(vals) == 6 else None
 
 
-def go_after_calibrate(ser, arm, calibrated):
-    """หมุนข้อที่เพิ่ง calibrate ไปท่าใน after_calibrate (ทีละข้อ ด้วยเพดานความเร็วในบอร์ด config/joint_speed.yaml)"""
-    for j, deg in sorted(after_calibrate(arm).items()):
+def go_after_calibrate(ser, path, after, calibrated):
+    """หมุนข้อที่เพิ่ง calibrate ไปท่าใน after_calibrate (ทีละข้อ ด้วยเพดานความเร็วในบอร์ด config/joint_speed.yaml)
+    คืน (serial ที่ใช้ต่อได้, สำเร็จไหม) — ไม่สำเร็จ = ไม่ควรไปขั้นถัดไป (ข้อนั้นอาจยังงออยู่)"""
+    for j, deg in sorted(after.items()):
         if str(j + 1) not in calibrated:
             continue
         now = board_joints(ser)
         if now is None:
             print(f"✗ บอร์ดไม่ตอบ JP — ไม่หมุนข้อ {j + 1} ไปท่าหลัง calibrate", flush=True)
-            return
+            return ser, False
         target = list(now)
         target[j] = deg - DRIVER_OFFSETS[j]
         print(f"→ ข้อ {j + 1} ไป {deg:+.1f}° (มุมจริง) ...", flush=True)
+        # MT ส่งมุมปัจจุบันของข้ออื่นกลับไปตรงๆ ข้ออื่นจึงไม่ขยับ (รวมข้อที่ยังไม่ calibrate)
         ask(ser, ("MT" + "".join(f"{a}{v:.6f}" for a, v in zip(AXES, target)) + "\n").encode(), "JP")
         t_end = time.monotonic() + 30
         while time.monotonic() < t_end:
             time.sleep(0.2)
-            now = board_joints(ser)
+            try:
+                now = board_joints(ser)
+            except (serial.SerialException, OSError):  # USB หลุดระหว่างหมุน — บอร์ดหมุนต่อเอง รอพอร์ตกลับมา
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+                ser = open_port(path, wait=60)
+                continue
             if now and abs(now[j] - target[j]) < 0.3:
                 print(f"  ข้อ {j + 1} ถึงแล้ว ({now[j] + DRIVER_OFFSETS[j]:+.1f}°)", flush=True)
                 break
         else:
             print(f"✗ ข้อ {j + 1} ไม่ถึงเป้าใน 30 วินาที — ดูว่าติดอะไรไหม", flush=True)
+            return ser, False
+    return ser, True
 
 
 def open_port(path, wait=60):
@@ -146,6 +179,9 @@ def calibrate_group(ser, path, group):
 def main():
     argv = sys.argv[1:]
     arm = None
+    step = "--step" in argv
+    if step:
+        argv.remove("--step")
     if "--arm" in argv:
         i = argv.index("--arm")
         arm = argv[i + 1] if i + 1 < len(argv) else ""
@@ -156,12 +192,15 @@ def main():
         sys.exit(__doc__)
     path, specs = argv[0], argv[1:]
     if specs == ["all"]:
+        sys.exit("ตัวนี้ไม่มีลำดับเริ่มต้น — ใส่ลำดับข้อเอง เช่น 6 5 4 2 3 1 (arm calibrate <แขน> all ใช้ลำดับใน "
+                 "scripts/arm.sh ให้) · 6 ข้อพร้อมกันแบบต้นฉบับ = together (ห้ามใช้ตอนติดมือ)")
+    if specs == ["together"]:
         groups = [""]
     else:
         groups = []
         for spec in specs:
             if not spec or any(c not in "123456" for c in spec) or len(set(spec)) != len(spec):
-                sys.exit(f"'{spec}' ไม่ถูกต้อง — ใช้เลขข้อ 1-6 เช่น 6 5 4 1 2 3 หรือ 456 123 หรือ all")
+                sys.exit(f"'{spec}' ไม่ถูกต้อง — ใช้เลขข้อ 1-6 เช่น 6 5 4 2 3 1 หรือ 456 123 หรือ together")
             groups.append("".join(sorted(spec)))
         done = "".join(groups)
         if len(set(done)) != len(done):
@@ -180,7 +219,7 @@ def main():
     fw = ask(ser, b"JV\n", "JV")
     if groups != [""] and fw not in ("JVseq1", "JVseq2", "JVseq3"):
         sys.exit("เฟิร์มแวร์บนบอร์ดนี้เป็นต้นฉบับ (เลือกข้อไม่ได้ — JC5 จะหมุนทั้ง 6 ข้อ) — แฟลช AR4_ROS2_seq ก่อน "
-                 "หรือใช้ all ถ้ายอมให้หมุนพร้อมกัน")
+                 "หรือใช้ together ถ้ายอมให้หมุนพร้อมกัน (ถอดมือก่อน)")
     if fw not in ("JVseq2", "JVseq3"):
         print("หมายเหตุ: เฟิร์มแวร์นี้ไม่ใช่ v2/v3 — ถ้าข้อไหนหาสวิตช์ไม่เจอ บอร์ดจะค้างจนกว่าจะปิดไฟแขน", flush=True)
     if arm and fw in ("JVseq2", "JVseq3"):  # พอร์ตมาจากที่จำไว้ได้ (อีกแขนเปิดอยู่ ถามทุกบอร์ดไม่ได้) — เช็กชื่อก่อนขยับ
@@ -193,11 +232,25 @@ def main():
               "(ตำแหน่งข้อนั้นยังเป็นค่าเดิม — ถ้าเพิ่งเปิดไฟแขน ต้อง calibrate ให้ครบก่อนใช้งาน)", flush=True)
     # ตั้งเพดานความเร็วก่อนหมุน — ขากลับท่าพักหลังเจอสวิตช์ใช้เพดานนี้ (J1 เดิม 30°/s ผ่านแนวนอนเต็มสปีด)
     set_speed(ser, arm or "")
-    for group in groups:
+    trim, after = arm_config(arm) if arm else ([0.0] * 6, {})
+    if step and len(groups) > 1:
+        print("ลำดับ: " + " → ".join(f"ข้อ {','.join(g)}" for g in groups)
+              + (" · แต่ละข้อเสร็จแล้วไปท่าหลัง calibrate ทันที" if after else ""), flush=True)
+    for n, group in enumerate(groups, 1):
+        if step:
+            print(f"\n── ขั้น {n}/{len(groups)} ──\n{describe(group, trim, after)}", flush=True)
+            try:
+                input("   ดูว่าทางที่จะหมุนโล่ง แล้วกด Enter (หยุดตรงนี้กด Ctrl+C — แขนไม่ขยับต่อ) ")
+            except (KeyboardInterrupt, EOFError):
+                rest = sorted("".join(groups[n - 1:]) or "123456")
+                sys.exit(f"\nหยุดก่อนขั้น {n} — ข้อ {', '.join(rest)} ยังไม่ได้ calibrate รอบนี้")
         ser = calibrate_group(ser, path, group)
+        if arm:  # ไปท่าหลัง calibrate ทันที ก่อนข้อถัดไปหมุน (เช่นข้อมือตรงก่อนหมุนข้อ 4/6)
+            ser, ok = go_after_calibrate(ser, path, after, group or "123456")
+            if not ok and n < len(groups):
+                sys.exit("✗ หยุดลำดับไว้ก่อน — ข้อที่เพิ่ง calibrate ไปท่าหลัง calibrate ไม่สำเร็จ ถ้าทำข้อถัดไปต่อ "
+                         "ข้อนั้นจะหมุนตอนแขนยังงออยู่ · ดูว่าติดอะไร แล้วสั่งเฉพาะข้อที่เหลือ")
     print("calibrate ครบตามที่สั่งแล้ว", flush=True)
-    if arm:
-        go_after_calibrate(ser, arm, "123456" if groups == [""] else "".join(groups))
 
 
 if __name__ == "__main__":
