@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """calibrate แขน AR4 หนึ่งตัว (เฟิร์มแวร์ ROS) นอก ROS — ทีละข้อต่อตามลำดับที่เลือก
 
-  ar_calibrate.py <พอร์ต Teensy> --arm right --step 6 5 4 2 3 1   # ทีละขั้น หยุดรอ Enter ก่อนทุกขั้น
+  ar_calibrate.py <พอร์ต Teensy> --arm right --step 2 6 5 4 3 1   # ทีละขั้น หยุดรอ Enter ก่อนทุกขั้น
   ar_calibrate.py <พอร์ต Teensy> 5               # ข้อเดียว (ไว้ไล่ดูว่าข้อไหนพามือไปชน)
   ar_calibrate.py <พอร์ต Teensy> 456 123         # กลุ่มละหลายข้อพร้อมกัน
   ar_calibrate.py <พอร์ต Teensy> together        # 6 ข้อพร้อมกันแบบต้นฉบับ — ห้ามใช้ตอนติดมือ (ข้อ 5 กับ 6
@@ -13,7 +13,7 @@ config/zero_trims.yaml (มุมจริง องศา เช่น right: {
 — ข้อมือตรงก่อนหมุนข้อ 4/6 มือจึงหมุนอยู่ในแนวแขน ไม่กวาดเข้าหาตัวแขน (ท่าพักเฟิร์มแวร์ข้อ 5 งออยู่ ~52°)
 --step: แสดงว่าขั้นนี้ข้อไหนจะหมุนไปทางไหน แล้วรอ Enter (Ctrl+C ตอนรอ = หยุดก่อนขั้นนั้น แขนไม่ขยับต่อ)
   ระหว่างข้อกำลังหมุน Ctrl+C หยุดแขนไม่ได้ (บอร์ดทำต่อจนจบเอง) — จะหยุดต้องปิดไฟแขน
-  บน Windows ใช้ชื่อ COM ได้ตรงๆ:  python ar_calibrate.py COM9 --arm left --step 6 5 4 2 3 1   (ต้องมี pyserial)
+  บน Windows ใช้ชื่อ COM ได้ตรงๆ:  python ar_calibrate.py COM9 --arm left --step 2 6 5 4 3 1   (ต้องมี pyserial)
 
 เลือกข้อได้ต้องใช้เฟิร์มแวร์ AR4_ROS2_seq (C:\\ar4_fw\\AR4_ROS2_seq) — ตัวนี้ถาม JV ก่อน ต้นฉบับไม่ตอบ JV และ
 ถ้าได้ JC5 จะ calibrate ทั้ง 6 ข้อพร้อมกัน จึงไม่ส่งเลือกข้อให้เฟิร์มแวร์ต้นฉบับเด็ดขาด
@@ -192,7 +192,7 @@ def main():
         sys.exit(__doc__)
     path, specs = argv[0], argv[1:]
     if specs == ["all"]:
-        sys.exit("ตัวนี้ไม่มีลำดับเริ่มต้น — ใส่ลำดับข้อเอง เช่น 6 5 4 2 3 1 (arm calibrate <แขน> all ใช้ลำดับใน "
+        sys.exit("ตัวนี้ไม่มีลำดับเริ่มต้น — ใส่ลำดับข้อเอง เช่น 2 6 5 4 3 1 (arm calibrate <แขน> all ใช้ลำดับใน "
                  "scripts/arm.sh ให้) · 6 ข้อพร้อมกันแบบต้นฉบับ = together (ห้ามใช้ตอนติดมือ)")
     if specs == ["together"]:
         groups = [""]
@@ -200,7 +200,7 @@ def main():
         groups = []
         for spec in specs:
             if not spec or any(c not in "123456" for c in spec) or len(set(spec)) != len(spec):
-                sys.exit(f"'{spec}' ไม่ถูกต้อง — ใช้เลขข้อ 1-6 เช่น 6 5 4 2 3 1 หรือ 456 123 หรือ together")
+                sys.exit(f"'{spec}' ไม่ถูกต้อง — ใช้เลขข้อ 1-6 เช่น 2 6 5 4 3 1 หรือ 456 123 หรือ together")
             groups.append("".join(sorted(spec)))
         done = "".join(groups)
         if len(set(done)) != len(done):
