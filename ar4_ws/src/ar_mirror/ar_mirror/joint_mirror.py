@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""มิเรอร์ /joint_states ของแขนจำลอง (sim, namespace เริ่มต้น) ไปสั่งแขนจริง
-(namespace 'real') เป็น JointTrajectory จุดเดียวต่อเนื่อง ให้ขยับตามกันแบบเรียลไทม์
+"""Mirror /joint_states of the simulated arm (sim, default namespace) to command the real arm
+(namespace 'real') as a continuous single-point JointTrajectory, so they move together in real time
 
   ros2 run ar_mirror joint_mirror
   ros2 run ar_mirror joint_mirror --ros-args -p rate:=10.0 -p time_from_start:=0.3
 
-พารามิเตอร์
-  source_topic     (str)   /joint_states                               ที่มา (จากซิม)
-  target_topic     (str)   /real/joint_trajectory_controller/joint_trajectory  ปลายทาง (แขนจริง)
-  rate             (float) 10.0   Hz สูงสุดที่จะส่งคำสั่งไปแขนจริง
-  time_from_start  (float) 0.3    วิ ระยะเวลาที่ให้แขนจริงไปถึงจุดที่สั่ง
+Parameters
+  source_topic     (str)   /joint_states                               source (from the sim)
+  target_topic     (str)   /real/joint_trajectory_controller/joint_trajectory  destination (real arm)
+  rate             (float) 10.0   max Hz for sending commands to the real arm
+  time_from_start  (float) 0.3    s, time given to the real arm to reach the commanded point
 
-⚠️ MoveIt วางแผนเทียบ collision กับฉากในซิมเท่านั้น ไม่รู้จักสิ่งกีดขวางรอบแขนจริง
-   เคลียร์พื้นที่รอบแขนจริงให้ปลอดภัยก่อนสั่งเสมอ
+⚠️ MoveIt checks collisions against the sim scene only; it knows nothing about obstacles around the real arm
+   Always clear the area around the real arm before sending commands
 """
 import rclpy
 from rclpy.duration import Duration
@@ -30,16 +30,16 @@ class JointMirror(Node):
         self.declare_parameter(
             "target_topic", "/real/joint_trajectory_controller/joint_trajectory"
         )
-        # 10 Hz + 0.3s: ยิ่งถี่ แขนจริงยิ่งเกาะตามซิมใกล้ขึ้น (JTC จะ re-target บ่อยขึ้น)
-        # เคยต้องบีบเหลือ 5 Hz ตอนวิ่งผ่าน usbip เพราะ serial round-trip กิน 25-43 ms
-        # ตอนนี้ใช้สะพาน serial-over-TCP แล้ววัดได้ ~1 ms จึงกลับขึ้นมาได้สบายๆ
-        # (หมายเหตุ: ค่านี้ไม่ได้กำหนดภาระ serial — controller_manager เขียน serial ทุกรอบ
-        #  ตาม update_rate อยู่แล้วไม่ว่าจะมีคำสั่งใหม่หรือไม่ ดู ar_mirror/config/real_controllers.yaml)
+        # 10 Hz + 0.3s: the more frequent, the closer the real arm follows the sim (the JTC re-targets more often)
+        # It once had to be cut to 5 Hz when running over usbip, because a serial round-trip took 25-43 ms
+        # Now the serial-over-TCP bridge measures ~1 ms, so it can easily go back up
+        # (Note: this value does not set the serial load — controller_manager writes serial every cycle
+        #  at update_rate anyway, new command or not; see ar_mirror/config/real_controllers.yaml)
         self.declare_parameter("rate", 10.0)
         self.declare_parameter("time_from_start", 0.3)
-        # safety interlock: ไม่เริ่มมิเรอร์จนกว่าท่าของซิมกับแขนจริงจะต่างกันไม่เกินค่านี้
+        # safety interlock: don't start mirroring until the sim pose and the real arm differ by no more than this
         self.declare_parameter("real_state_topic", "/real/joint_states")
-        self.declare_parameter("engage_tolerance", 0.26)  # rad (~15 องศา)
+        self.declare_parameter("engage_tolerance", 0.26)  # rad (~15 degrees)
 
         src = str(self.get_parameter("source_topic").value)
         dst = str(self.get_parameter("target_topic").value)
@@ -57,9 +57,9 @@ class JointMirror(Node):
         self.real_positions = None
         self.engaged = False
         self.get_logger().info(
-            f"joint_mirror พร้อม — {src} -> {dst} สูงสุด {1.0 / self.min_period:.0f} Hz "
-            f"(time_from_start={self.tfs:.2f}s) | รอให้ท่าตรงกันภายใน "
-            f"{self.tol:.2f} rad ก่อนเริ่มสั่งแขนจริง"
+            f"joint_mirror ready — {src} -> {dst} max {1.0 / self.min_period:.0f} Hz "
+            f"(time_from_start={self.tfs:.2f}s) | waiting for the poses to match within "
+            f"{self.tol:.2f} rad before commanding the real arm"
         )
 
     def _on_real_state(self, msg: JointState):
@@ -78,12 +78,12 @@ class JointMirror(Node):
         try:
             positions = [by_name[j] for j in FOLLOWED_JOINTS]
         except KeyError:
-            return  # ยังไม่มีครบ 6 แกน (เช่นตอนเพิ่ง spawn)
+            return  # not all 6 axes yet (e.g. right after spawn)
 
         if not self.engaged:
             if self.real_positions is None:
                 self.get_logger().warn(
-                    "ยังไม่ได้รับ joint_states ของแขนจริง — ยังไม่เริ่มมิเรอร์",
+                    "No joint_states from the real arm yet — mirroring not started",
                     throttle_duration_sec=3.0,
                 )
                 return
@@ -92,15 +92,15 @@ class JointMirror(Node):
             if worst > self.tol:
                 worst_joint = FOLLOWED_JOINTS[diffs.index(worst)]
                 self.get_logger().warn(
-                    f"ท่าซิมกับแขนจริงต่างกันมากเกินไป ({worst_joint} ต่าง "
-                    f"{worst:.3f} rad = {worst * 57.3:.1f} องศา, เกณฑ์ {self.tol:.2f} rad) "
-                    "— ยังไม่สั่งแขนจริง กันกระชาก ให้ขยับซิมไปใกล้ท่าแขนจริงก่อน",
+                    f"Sim pose and real arm differ too much ({worst_joint} off by "
+                    f"{worst:.3f} rad = {worst * 57.3:.1f} degrees, limit {self.tol:.2f} rad) "
+                    "— not commanding the real arm, to avoid a jerk; move the sim close to the real arm's pose first",
                     throttle_duration_sec=3.0,
                 )
                 return
             self.engaged = True
             self.get_logger().info(
-                f"ท่าตรงกันแล้ว (ต่างสูงสุด {worst:.3f} rad) — เริ่มมิเรอร์ไปแขนจริง"
+                f"Poses match (max difference {worst:.3f} rad) — mirroring to the real arm"
             )
 
         self.last_t = now

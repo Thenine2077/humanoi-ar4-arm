@@ -1,29 +1,29 @@
-# สำเนาค่าจาก ar_hardware_interface/config/controllers.yaml ของผู้ขาย (ไฟล์ต้นฉบับไม่ถูกแก้)
-# ต่างจากต้นฉบับ 2 จุด เพราะในชุด dual ฝั่งแขนจริงถูกรันใต้ namespace /real:
+# Copy of the values from the vendor's ar_hardware_interface/config/controllers.yaml (the original file is not edited)
+# 2 differences from the original, because in the dual setup the real-arm side runs under namespace /real:
 #
-#   1) คีย์ระดับบนต้องเป็นชื่อโหนดเต็ม "/real/..." — ของผู้ขายใช้ "controller_manager:"
-#      เฉยๆ ซึ่ง ROS 2 ตีความว่าเป็นโหนดใน root namespace เท่านั้น พอโหนดจริงชื่อ
-#      /real/controller_manager มันเลยไม่เห็นพารามิเตอร์ใดๆ แล้ว spawner ตายด้วย
+#   1) the top-level key must be the full node name "/real/..." — the vendor uses plain "controller_manager:",
+#      which ROS 2 takes as a node in the root namespace only; since the real node is named
+#      /real/controller_manager, it sees no parameters at all and the spawner dies with
 #      "The 'type' param was not defined for 'joint_state_broadcaster'"
 #
-#   2) update_rate ลด 100 -> 50 Hz: รันคู่กับ Gazebo แล้ว loop ตามไม่ทัน log เต็มไปด้วย
-#      "Overrun detected!" (read/write ผ่าน usbip ใช้เวลา 6-22 ms ต่อรอบ เกินงบ 10 ms)
-#      และจบด้วย serial หลุด "End of file" — 50 Hz ให้งบ 20 ms ต่อรอบ พอสำหรับ usbip
+#   2) update_rate lowered 100 -> 50 Hz: running alongside Gazebo the loop couldn't keep up, the log was full of
+#      "Overrun detected!" (read/write over usbip took 6-22 ms per cycle, over the 10 ms budget)
+#      and it ended with serial dropping "End of file" — 50 Hz gives a 20 ms budget per cycle, enough for usbip
 /real/controller_manager:
   ros__parameters:
-    # ทุกรอบของ controller_manager ยิง serial round-trip "สองครั้ง" ไม่ใช่ครั้งเดียว
-    #   ARHardwareInterface::read()  -> TeensyDriver::getJointPositions() -> ส่ง "JP\n" แล้วรอคำตอบ
-    #   ARHardwareInterface::write() -> TeensyDriver::update()            -> ส่ง "MT...\n" แล้วรอคำตอบ
-    # ทั้งคู่เป็น blocking request/response และ TeensyDriver::receive() อ่านทีละ 1 ไบต์จนเจอ '\n'
-    # งบเวลาต่อรอบจึงเท่ากับ 2 × เวลา round-trip ของช่องทางที่ใช้อยู่
+    # Every controller_manager cycle does a serial round-trip "twice", not once
+    #   ARHardwareInterface::read()  -> TeensyDriver::getJointPositions() -> sends "JP\n" and waits for the reply
+    #   ARHardwareInterface::write() -> TeensyDriver::update()            -> sends "MT...\n" and waits for the reply
+    # both are blocking request/response, and TeensyDriver::receive() reads 1 byte at a time until '\n'
+    # so the time budget per cycle = 2 × the round-trip time of the link in use
     #
-    # วัดจริง (ยิง "JP\n" 10 Hz ต่อเนื่อง 60 วินาที × 2 รอบ):
-    #   ผ่าน usbip           25-43 ms ต่อ round-trip  และหลุด "End of file" ภายใน ~1 นาที
-    #   เปิด COM ตรงบน Windows  1.0 ms ต่อ round-trip  599/599 สำเร็จ ไม่มี timeout เลย
-    # ต่างกัน 30 เท่า -> คอขวดคือ usbip ล้วนๆ ไม่ใช่บอร์ดหรือสายไฟ
-    # ตอนนี้ใช้สะพาน serial-over-TCP (tools/serial_bridge_*.py|sh) แทน usbip แล้ว
-    # 30 Hz ให้งบ 33 ms/รอบ เหลือเฟือสำหรับ ~2-5 ms ของสะพาน และขยับลื่นกว่า 10 Hz มาก
-    # ถ้าเจอ "Overrun detected!" รัวๆ ค่อยลดลงมาเป็น 20
+    # Measured (sending "JP\n" at 10 Hz continuously for 60 seconds × 2 runs):
+    #   over usbip              25-43 ms per round-trip, and "End of file" drop within ~1 minute
+    #   COM opened directly on Windows  1.0 ms per round-trip, 599/599 OK, no timeouts at all
+    # 30× difference -> the bottleneck is purely usbip, not the board or the cables
+    # Now a serial-over-TCP bridge (tools/serial_bridge_*.py|sh) is used instead of usbip
+    # 30 Hz gives a 33 ms/cycle budget, plenty for the bridge's ~2-5 ms, and moves much smoother than 10 Hz
+    # if "Overrun detected!" shows up repeatedly, lower it to 20
     update_rate: 30 # Hz
 
     joint_trajectory_controller:

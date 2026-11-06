@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
-<!-- ros2_control ของแขน AR4 หนึ่งข้าง (ชื่อข้อต่อ ${prefix}joint_1..6) — ใช้ร่วมกันทั้งแขนจริงและซิม
-  hw = real (Teensy ผ่านไดรเวอร์ของผู้ขาย) | mock (จำลอง ไม่ต่อบอร์ด) | gz (Gazebo ผ่าน gz_ros2_control)
-       | none (ไม่มี ros2_control ของแขนนี้ — ตัวคุมแยกแขนละตัว แต่ละตัวโหลดเฉพาะแขนตัวเอง)
-  ลิมิตเป็นตัวเลขจริง (ไฟล์ของผู้ขายเขียน {..} ไม่มี $ จึง parse ไม่ผ่าน)
-  initial_value = ท่าพักหลัง calibrate (ใช้ตอน mock / ซิม)
-  ลิมิต / ท่าพัก = ค่าของผู้ขาย + ค่าชดเชยศูนย์ในบอร์ด (config/zero_trims.yaml) ของแขนนั้น
+<!-- ros2_control for one AR4 arm (joint names ${prefix}joint_1..6) — shared by the real arm and the sim
+  hw = real (Teensy via the vendor driver) | mock (simulated, no board) | gz (Gazebo via gz_ros2_control)
+       | none (no ros2_control for this arm — one controller per arm, each loads only its own arm)
+  Limits are literal numbers (the vendor file writes {..} without $, so it fails to parse)
+  initial_value = rest pose after calibrate (used for mock / sim)
+  Limits / rest pose = vendor values + that arm's zero trim stored in the board (config/zero_trims.yaml)
 -->
 <robot xmlns:xacro="http://wiki.ros.org/xacro">
   <xacro:macro name="arm_joint" params="name lo hi init">
@@ -20,10 +20,10 @@
   </xacro:macro>
 
   <xacro:macro name="arm_control" params="prefix hw port:=none">
-    <!-- ค่าชดเชยศูนย์ในบอร์ดของแขนนี้ (ar_dual/config/zero_trims.yaml) — ลิมิตและท่าพักเลื่อนตาม -->
+    <!-- This arm's zero trim stored in the board (ar_dual/config/zero_trims.yaml) — limits and rest pose shift with it -->
     <xacro:property name="zcfg" value="${xacro.load_yaml('$(find ar_dual)/config/zero_trims.yaml')}"/>
     <xacro:property name="zt" value="${[float(v) for v in zcfg.get(prefix[:-1], [0] * 6)]}"/>
-    <!-- ท่าหลัง calibrate (after_calibrate มุมจริง องศา) แทนท่าพักของเฟิร์มแวร์ ในข้อที่กำหนด -->
+    <!-- After-calibration pose (after_calibrate, real angle in degrees) replaces the firmware rest pose for the listed joints -->
     <xacro:property name="ac" value="${dict((int(k), float(v)) for k, v in ((zcfg.get('after_calibrate') or dict()).get(prefix[:-1]) or dict()).items())}"/>
     <xacro:unless value="${hw == 'none'}">
     <ros2_control name="${prefix}arm" type="system">
@@ -38,7 +38,7 @@
         </xacro:if>
         <xacro:if value="${hw == 'gz'}">
           <plugin>gz_ros2_control/GazeboSimSystem</plugin>
-          <!-- ค่าเริ่ม 0.1 อ่อนเกินจะต้านน้ำหนักแขน แขนจะค่อยๆห้อยลง (เจอแล้วในซิมแขนเดี่ยว) -->
+          <!-- default 0.1 is too weak to hold the arm's weight, the arm slowly sags (seen in the single-arm sim) -->
           <param name="position_proportional_gain">20.0</param>
         </xacro:if>
       </hardware>

@@ -1,8 +1,8 @@
-# ตัวคุมแยกแขนละโปรเซส (launch/arm_hardware.launch.py) — แขนหนึ่งปิด/คาลิเบรต/เปิดใหม่ได้โดยอีกแขนทำงานต่อ
-# ไดรเวอร์ของผู้ขายเปิดพอร์ต Teensy ตอนเริ่มและไม่ปล่อยจนโปรเซสจบ จึงต้องแยกโปรเซส (สั่งพักทีละแขนไม่ปล่อยพอร์ต)
-# ชื่อตัวคุมและ action เหมือนเดิม (/left_arm_controller/follow_joint_trajectory ...) — MoveIt / ตัวเล่นโปรแกรมไม่ต้องแก้
-# joint_state_broadcaster แยกต่อแขน ส่ง /<แขน>/joint_states แล้ว joint_state_publisher รวมเป็น /joint_states ครบ 12 ข้อ
-# (ซิม Gazebo ยังใช้ controllers.yaml ตัวคุมเดียว)
+# Separate controller process per arm (launch/arm_hardware.launch.py) — one arm can be stopped/calibrated/restarted while the other keeps working
+# The vendor driver opens the Teensy port at startup and holds it until the process exits, so each arm needs its own process (deactivating one arm does not release its port)
+# Controller and action names unchanged (/left_arm_controller/follow_joint_trajectory ...) — MoveIt / program player need no changes
+# joint_state_broadcaster per arm publishes /<arm>/joint_states, then joint_state_publisher merges them into /joint_states with all 12 joints
+# (Gazebo sim still uses controllers.yaml with a single controller manager)
 left_controller_manager:
   ros__parameters:
     update_rate: 50

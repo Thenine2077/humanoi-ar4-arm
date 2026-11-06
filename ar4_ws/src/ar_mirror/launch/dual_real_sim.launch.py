@@ -1,18 +1,18 @@
-"""เปิดแขนจำลอง (Gazebo) + แขนจริง (namespace 'real') พร้อมกัน แล้วมิเรอร์ให้ขยับตามกัน
+"""Start the simulated arm (Gazebo) + the real arm (namespace 'real') together, and mirror them so they move together
 
   ros2 launch ar_mirror dual_real_sim.launch.py
   ros2 launch ar_mirror dual_real_sim.launch.py serial_port:=/dev/ttyACM0 calibrate:=True
 
-สั่งงานผ่าน MoveIt (ar_moveit_config, เปิดแยกอีกหน้าต่างตามปกติ) เข้าแขนจำลองเหมือนเดิม
-(ลาก marker ใน RViz แล้ว Plan & Execute) แขนจริงจะขยับตามภายใน ~1/rate วินาที ผ่าน joint_mirror
+Command it through MoveIt (ar_moveit_config, opened in a separate terminal window as usual) on the simulated arm as before
+(drag the marker in RViz, then Plan & Execute); the real arm follows within ~1/rate seconds via joint_mirror
 
-หมายเหตุ: ฝั่งแขนจริงเขียนขึ้นใหม่ที่นี่ (ไม่ได้ include ar_hardware_interface/ar_hardware.launch.py
-ของผู้ขายตรงๆ) เพราะไฟล์นั้นใส่ "-c /controller_manager" แบบ absolute path ซึ่งจะหา
-controller_manager ใน namespace "real" ไม่เจอ — แต่ยังใช้ไฟล์ข้อมูลของผู้ขาย (urdf xacro,
-controllers.yaml, controller_update_rate.yaml) ทั้งหมดตรงๆ ไม่มีการแก้ไขไฟล์ผู้ขายเลย
+Note: the real-arm side is written fresh here (it doesn't include the vendor's ar_hardware_interface/ar_hardware.launch.py
+directly) because that file passes "-c /controller_manager" as an absolute path, which can't find
+controller_manager in namespace "real" — but it still uses the vendor's data files (urdf xacro,
+controllers.yaml, controller_update_rate.yaml) all as is; no vendor file is edited at all
 
-⚠️ MoveIt วางแผนเทียบ collision กับฉากในซิมเท่านั้น ไม่รู้จักสิ่งกีดขวางรอบแขนจริง
-   เคลียร์พื้นที่รอบแขนจริงให้ปลอดภัยก่อนรันเสมอ — แขนจะขยับทันทีที่มีคนสั่งฝั่งซิม
+⚠️ MoveIt checks collisions against the sim scene only; it knows nothing about obstacles around the real arm
+   Always clear the area around the real arm before running — the arm moves as soon as anyone commands the sim side
 """
 import os
 
@@ -30,10 +30,10 @@ def generate_launch_description():
     serial_port = LaunchConfiguration("serial_port")
     calibrate = LaunchConfiguration("calibrate")
 
-    # ---------- แขนจำลอง (Gazebo, namespace default) ----------
-    # gui default = false: หน้าต่าง 3D ของ Gazebo เรนเดอร์ผ่าน WSLg กิน CPU หนักมากจน
-    # usbip (USB ของ Teensy ที่ forward จาก Windows) timeout แล้ว serial หลุดภายในไม่กี่วินาที
-    # ดูแขนจำลองผ่าน RViz ของ MoveIt แทนได้ (เห็นทั้งซิมและแผนการเคลื่อนที่อยู่แล้ว)
+    # ---------- Simulated arm (Gazebo, default namespace) ----------
+    # gui default = false: the Gazebo 3D window rendering through WSLg loads the CPU so heavily that
+    # usbip (the Teensy's USB forwarded from Windows) times out and serial drops within a few seconds
+    # watch the simulated arm in MoveIt's RViz instead (it shows both the sim and the motion plan anyway)
     sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
@@ -43,8 +43,8 @@ def generate_launch_description():
         launch_arguments={"gui": LaunchConfiguration("gz_gui")}.items(),
     )
 
-    # ---------- แขนจริง (namespace "real") ----------
-    # ไฟล์ข้อมูลทั้งหมดของผู้ขาย ไม่แก้ไข — reuse ตรงๆ
+    # ---------- Real arm (namespace "real") ----------
+    # all vendor data files, unmodified — reused as is
     real_robot_description_content = Command(
         [
             PathJoinSubstitution([FindExecutable(name="xacro")]),
@@ -62,9 +62,9 @@ def generate_launch_description():
     )
     real_robot_description = {"robot_description": real_robot_description_content}
 
-    # ใช้สำเนาของเราเอง (ar_mirror/config/real_controllers.yaml) แทนของผู้ขาย เพราะคีย์ใน
-    # ไฟล์ผู้ขายเป็น "controller_manager:" ซึ่งใช้ได้เฉพาะ root namespace — ใต้ /real ต้องเป็น
-    # "/real/controller_manager:" ไม่งั้น controller ไม่ได้ type แล้ว spawner ตาย
+    # Use our own copy (ar_mirror/config/real_controllers.yaml) instead of the vendor's, because the key in
+    # the vendor file is "controller_manager:", which only works in the root namespace — under /real it must be
+    # "/real/controller_manager:", otherwise the controller gets no type and the spawner dies
     real_controllers_cfg = PathJoinSubstitution(
         [FindPackageShare("ar_mirror"), "config", "real_controllers.yaml"]
     )
@@ -86,10 +86,10 @@ def generate_launch_description():
         namespace="real",
         output="both",
         parameters=[real_robot_description],
-        # tf2 publish ไป "/tf" แบบ absolute เสมอ (namespace ไม่ช่วย) — ถ้าไม่ remap ฝั่งแขนจริง
-        # จะยิงเฟรมชื่อ link_1..link_6 ชนกับของซิมที่ชื่อเดียวกัน แถมคนละฐานเวลา (แขนจริงใช้
-        # wall time, ซิมใช้ sim time) RViz เลยขึ้น TF_OLD_DATA รัวๆ แล้วเลือกใช้อันที่เวลาใหม่กว่า
-        # (ของแขนจริง) แทนซิม — แยกไป /real/tf ให้ไม่ชนกัน
+        # tf2 always publishes to "/tf" as an absolute topic (namespace doesn't help) — without the remap, the real-arm side
+        # would publish frames named link_1..link_6 clashing with the sim's frames of the same names, on a different time base too (the real arm uses
+        # wall time, the sim uses sim time), so RViz floods TF_OLD_DATA and picks the one with the newer time
+        # (the real arm's) instead of the sim's — split off to /real/tf so they don't clash
         remappings=[("/tf", "/real/tf"), ("/tf_static", "/real/tf_static")],
     )
 
@@ -115,16 +115,16 @@ def generate_launch_description():
         ],
     )
 
-    # ---------- มิเรอร์: sim /joint_states -> real joint_trajectory_controller ----------
+    # ---------- Mirror: sim /joint_states -> real joint_trajectory_controller ----------
     mirror = Node(
         package="ar_mirror",
         executable="joint_mirror",
         output="screen",
     )
 
-    # ต่อ serial กับแขนจริง "หลัง" Gazebo โหลดเสร็จแล้ว — ถ้าต่อพร้อมกันตอน Gazebo บูต
-    # (ช่วงที่กิน CPU สูงสุด) usbip จะ timeout แล้วหลุดทันที ("Error in transmit" ->
-    # "read: End of file" -> hardware 'ar' ถูก deactivate -> controller activate ไม่ได้)
+    # Connect serial to the real arm "after" Gazebo has finished loading — if connected at the same time as Gazebo boots
+    # (when it uses the most CPU) usbip times out and drops at once ("Error in transmit" ->
+    # "read: End of file" -> hardware 'ar' gets deactivated -> controllers can't activate)
     real_side_delayed = TimerAction(
         period=LaunchConfiguration("real_start_delay"),
         actions=[
@@ -143,12 +143,12 @@ def generate_launch_description():
             "gz_gui",
             default_value="false",
             choices=["true", "false"],
-            description="เปิดหน้าต่าง 3D ของ Gazebo ไหม (false = ประหยัด CPU กัน serial หลุด)",
+            description="Open the Gazebo 3D window? (false = saves CPU, avoids serial drops)",
         ),
         DeclareLaunchArgument(
             "real_start_delay",
             default_value="25.0",
-            description="หน่วงกี่วินาทีก่อนต่อแขนจริง (รอ Gazebo โหลดเสร็จก่อน)",
+            description="Seconds to wait before connecting the real arm (wait for Gazebo to finish loading)",
         ),
         sim,
         real_side_delayed,

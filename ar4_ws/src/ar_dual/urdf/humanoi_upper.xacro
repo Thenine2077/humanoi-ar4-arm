@@ -1,30 +1,30 @@
 <?xml version="1.0"?>
-<!-- ลำตัวบนของ Humanoi: เสา + หัว + กล้อง + แขน AR4 สองข้าง + มือ — ไฟล์เดียวใช้ทั้งระบบแขนจริง
-  (humanoi_arms.urdf.xacro) และหุ่นเต็มตัวใน Gazebo (humanoi_description/urdf/humanoi_full.urdf.xacro)
-  แก้ขนาดที่ไฟล์นี้ที่เดียว RViz/MoveIt ของแขนจริงกับซิมจะตรงกันเสมอ
+<!-- Humanoi upper body: pole + head + camera + two AR4 arms + hands — one file used by both the real arm system
+  (humanoi_arms.urdf.xacro) and the full robot in Gazebo (humanoi_description/urdf/humanoi_full.urdf.xacro)
+  Change dimensions only in this file, so RViz/MoveIt for the real arms and the sim always match
 
-  เฟรม "torso" = กึ่งกลางระหว่างฐานแขนสองตัว ที่ความสูงหัวไหล่: X ไปหน้าหุ่น, Y ไปซ้ายหุ่น, Z ขึ้น
-  ฐานแขน (base_link ของ AR4: Z = แกน J1 ชี้ออกจากผิวที่ยึด) ยึดกับเสาแนวนอน
-  - ซ้าย: Z ชี้ไปซ้ายหุ่น, X ไปหน้า, Y ลง — ได้จาก hand-eye calibration วันที่ 15 ต.ค. (ทิศขึ้น = -Y ของฐาน)
-  - ขวา: กลับด้านจากซ้าย (กล่องมอเตอร์ J1 ห้อยลงเหมือนกันตามรูป) — Z ชี้ไปขวา, X ไปหลัง, Y ลง
-    ** เดาจากรูป ยังไม่ได้วัด — ถ้าโมเดลแขนขวาใน RViz ไม่ตรงกับแขนจริงให้แก้ up_right_rpy **
+  Frame "torso" = midpoint between the two arm bases, at shoulder height: X to the robot's front, Y to the robot's left, Z up
+  Arm base (AR4 base_link: Z = J1 axis pointing out of the mounting surface) is fixed to the horizontal pole
+  - Left: Z points to the robot's left, X forward, Y down — from the hand-eye calibration on 15 Oct (up = base -Y)
+  - Right: reversed from the left (J1 motor box hangs down the same way, per the photo) — Z points right, X backward, Y down
+    ** guessed from a photo, not measured — if the right arm model in RViz doesn't match the real arm, fix up_right_rpy **
 -->
 <robot xmlns:xacro="http://wiki.ros.org/xacro">
   <xacro:include filename="$(find ar_dual)/urdf/ar_arm.xacro"/>
   <xacro:include filename="$(find ar_dual)/urdf/amazinghand.xacro"/>
 
-  <!-- ===== วัดจากหุ่นจริง 19 ต.ค. 2026 (ความสูงวัดจากพื้น) ===== -->
-  <xacro:property name="up_shoulder_z" value="1.455"/>   <!-- H: พื้น -> กึ่งกลางฐานแขน (แกน J1) -->
-  <xacro:property name="up_plate_top" value="0.205"/>    <!-- C + B: พื้น -> ผิวบนแผ่นฐาน (19.5 + 1 cm) -->
-  <xacro:property name="up_head_top" value="1.77"/>      <!-- I: พื้น -> ยอดหัว -->
-  <xacro:property name="up_half_gap" value="0.055"/>     <!-- ฐานแขนซ้าย-ขวาห่างกัน 11 cm -->
-  <!-- ===== ยังไม่ได้วัด (ค่าประมาณจากรูป) ===== -->
-  <xacro:property name="up_pole_x" value="0.10"/>        <!-- หน้าตัดเสา หน้า-หลัง -->
-  <xacro:property name="up_pole_y" value="0.08"/>        <!-- หน้าตัดเสา ซ้าย-ขวา -->
-  <xacro:property name="up_pole_dx" value="0.01"/>       <!-- กึ่งกลางเสาอยู่หน้าแกนหัวไหล่ -->
-  <xacro:property name="up_head_r" value="0.13"/>        <!-- หมวกกันน็อก ประมาณเป็นทรงกลม -->
+  <!-- ===== Measured on the real robot 19 Oct 2026 (heights from the floor) ===== -->
+  <xacro:property name="up_shoulder_z" value="1.455"/>   <!-- H: floor -> center of arm base (J1 axis) -->
+  <xacro:property name="up_plate_top" value="0.205"/>    <!-- C + B: floor -> top of base plate (19.5 + 1 cm) -->
+  <xacro:property name="up_head_top" value="1.77"/>      <!-- I: floor -> top of head -->
+  <xacro:property name="up_half_gap" value="0.055"/>     <!-- left and right arm bases are 11 cm apart -->
+  <!-- ===== Not measured yet (estimated from photos) ===== -->
+  <xacro:property name="up_pole_x" value="0.10"/>        <!-- pole cross-section, front-back -->
+  <xacro:property name="up_pole_y" value="0.08"/>        <!-- pole cross-section, left-right -->
+  <xacro:property name="up_pole_dx" value="0.01"/>       <!-- pole center is in front of the shoulder axis -->
+  <xacro:property name="up_head_r" value="0.13"/>        <!-- helmet, approximated as a sphere -->
 
-  <!-- ===== คำนวณจากค่าข้างบน (เทียบเฟรม torso) ===== -->
+  <!-- ===== Computed from the values above (relative to the torso frame) ===== -->
   <xacro:property name="up_pole_bottom" value="${up_plate_top - up_shoulder_z}"/>
   <xacro:property name="up_head_cz" value="${up_head_top - up_shoulder_z - up_head_r}"/>
   <xacro:property name="up_pole_len" value="${up_head_cz - up_pole_bottom}"/>
@@ -32,10 +32,10 @@
   <xacro:property name="up_left_rpy" value="${-pi/2} 0 0"/>
   <xacro:property name="up_right_rpy" value="${-pi/2} 0 ${pi}"/>
 
-  <!-- left_hand / right_hand: มีมือ AmazingHand ติดแขนนั้นหรือไม่ -->
+  <!-- left_hand / right_hand: whether that arm has an AmazingHand -->
   <xacro:macro name="humanoi_upper" params="left_hand:=true right_hand:=true">
     <link name="torso">
-      <!-- เสาอะลูมิเนียมโปรไฟล์ จากผิวบนแผ่นฐานขึ้นไปถึงหัว -->
+      <!-- aluminium profile pole, from the top of the base plate up to the head -->
       <visual>
         <origin xyz="${up_pole_dx} 0 ${up_pole_cz}" rpy="0 0 0"/>
         <geometry><box size="${up_pole_x} ${up_pole_y} ${up_pole_len}"/></geometry>
@@ -45,7 +45,7 @@
         <origin xyz="${up_pole_dx} 0 ${up_pole_cz}" rpy="0 0 0"/>
         <geometry><box size="${up_pole_x} ${up_pole_y} ${up_pole_len}"/></geometry>
       </collision>
-      <!-- หัว (หมวกกันน็อก) -->
+      <!-- head (helmet) -->
       <visual>
         <origin xyz="0.02 0 ${up_head_cz}" rpy="0 0 0"/>
         <geometry><sphere radius="${up_head_r}"/></geometry>
@@ -55,7 +55,7 @@
         <origin xyz="0.02 0 ${up_head_cz}" rpy="0 0 0"/>
         <geometry><sphere radius="${up_head_r}"/></geometry>
       </collision>
-      <!-- กล้อง Astra Pro หน้าเสาใต้หัวไหล่ (ตำแหน่งจาก hand-eye) -->
+      <!-- Astra Pro camera on the front of the pole below the shoulders (position from hand-eye) -->
       <visual>
         <origin xyz="0.095 0.009 -0.048" rpy="0 0 0"/>
         <geometry><box size="0.05 0.17 0.05"/></geometry>
@@ -72,34 +72,34 @@
       </inertial>
     </link>
 
-    <!-- แขนซ้าย: ศูนย์ข้อต่อจริง (off องศา = มุมจริง − มุมที่โปรแกรมบอก) — 26 ต.ค. ผู้ใช้จัดแต่ละข้อให้ตรงด้วยระดับน้ำ
-         (มุมจริง 0) แล้วอ่านค่าในโปรแกรม: ข้อ 1 7 · ข้อ 2 2 · ข้อ 3 0 · ข้อ 4 7 · ข้อ 5 −19 · ข้อ 6 −15 -> off = −ค่าที่อ่าน
-         (ข้อไหนในโมเดลเบี้ยวกว่าเดิม = กลับเครื่องหมายข้อนั้น)
-         ทุกข้อย้ายไปชดเชยในบอร์ดแล้ว (config/zero_trims.yaml -> ตัวเลขในโปรแกรม = มุมจริง) off จึงเป็น 0 ทุกข้อ
-         ข้อที่ย้ายไปบอร์ด: off ข้อนั้น = 0 (ไม่งั้นชดเชยซ้ำสองที่) — off ใช้กับข้อที่ยังไม่ได้ย้ายเท่านั้น -->
+    <!-- Left arm: real joint zero (off in degrees = real angle − angle the program reports) — 26 Oct the user leveled each joint with a spirit level
+         (real angle 0) and read the program values: joint 1 7 · joint 2 2 · joint 3 0 · joint 4 7 · joint 5 −19 · joint 6 −15 -> off = −value read
+         (if a joint looks more crooked in the model than before = flip that joint's sign)
+         All joints have moved to the board's zero trim (config/zero_trims.yaml -> program values = real angles), so off is 0 on every joint
+         Joints moved to the board: that joint's off = 0 (otherwise it is compensated twice) — off is only for joints not yet moved -->
     <xacro:ar_arm prefix="left_" parent="torso" off1="0" off2="0" off3="0" off4="0" off5="0" off6="0">
       <origin xyz="0 ${up_half_gap} 0" rpy="${up_left_rpy}"/>
     </xacro:ar_arm>
-    <!-- แขนขวา: ศูนย์ข้อ 4 ห่างจากโมเดลต้นฉบับ 180° (flip4) + ข้อ 5 กลับทิศ (dir5)
-         21 ต.ค. ผู้ใช้เห็นชุดข้อ 5 อยู่ผิดฝั่งและหน้าแปลนชี้เข้าเสา (เดิมมีแค่ dir5="-1" ตั้งแต่ 16 ต.ค.)
-         เช็กที่ท่าพักหลัง calibrate (สองแขนค่าข้อต่อเท่ากัน) เทียบภาพสะท้อนของแขนซ้าย:
-           dir5 อย่างเดียว      → หน้าแปลนชี้เข้าเสา, ชิ้นข้อ 4 ห่าง 34 มม.
-           flip4 + dir5        → หน้าแปลนถูก, ชิ้นข้อ 4/5/6 ห่าง ~14 มม. (เท่าชิ้นอื่น — ชิ้นส่วนสองแขนไม่ได้กลับซ้ายขวา)
-         ถ้าเจอข้ออื่นกลับทิศอีก ใส่ dirN="-1" เพิ่มตรงนี้ -->
+    <!-- Right arm: joint 4 zero is 180° from the original model (flip4) + joint 5 reversed (dir5)
+         21 Oct the user saw the joint 5 assembly on the wrong side and the flange pointing at the pole (previously only dir5="-1" since 16 Oct)
+         Checked at the rest pose after calibrate (both arms same joint values) against the mirror image of the left arm:
+           dir5 only           → flange points at the pole, joint 4 part off by 34 mm
+           flip4 + dir5        → flange correct, joint 4/5/6 parts off by ~14 mm (same as other parts — the two arms' parts are not left/right mirrored)
+         If another joint turns out reversed, add dirN="-1" here -->
     <xacro:ar_arm prefix="right_" parent="torso" dir5="-1" flip4="1">
       <origin xyz="0 ${-up_half_gap} 0" rpy="${up_right_rpy}"/>
     </xacro:ar_arm>
 
     <xacro:if value="${left_hand}">
-      <!-- เทียบรูปจริงท่าพักหลัง calibrate (21 ต.ค.): ฝ่ามือหันเข้าเสา/ขึ้นบน = หมุน 90° จากโมเดล
-           ตัวยึดกลมสีขาวระหว่างหน้าแปลนกับมือ ~25 มม. (ประเมินจากรูป — วัดจริงแล้วแก้ mount_offset)
-           26 ต.ค.: แขนซ้ายเปลี่ยนเป็นชุดมือซ้ายแล้ว (arm hand-side left) — รูปจริง: ฝ่ามือหันทางเดิม นิ้วโป้งอยู่ด้านนอก
-           ส่วนโมเดล (มือขวา) นิ้วโป้งอยู่ฝั่งเสา -> ใช้ mesh มือซ้าย มุมยึดเดิม -->
+      <!-- Compared with a photo of the rest pose after calibrate (21 Oct): palm faces the pole/up = 90° rotation from the model
+           white round mount between flange and hand ~25 mm (estimated from photo — measure and fix mount_offset)
+           26 Oct: left arm switched to the left-hand set (arm hand-side left) — photo: palm faces the same way, thumb on the outside
+           while in the model (right hand) the thumb is on the pole side -> use the left-hand mesh, same mount angle -->
       <xacro:amazinghand prefix="left_" parent="left_link_6" side="left" mount_offset="0.025" mount_yaw="${pi/2}"/>
     </xacro:if>
     <xacro:if value="${right_hand}">
-      <!-- ชุดมือขวาจะติดแขนขวา (ภาพสะท้อนของแขนซ้าย) — mount_yaw สะท้อนของแขนซ้าย
-           (ยังไม่มีรูปมือจริงบนแขนขวา — มีแล้วเทียบอีกครั้ง) -->
+      <!-- The right-hand set goes on the right arm (mirror image of the left arm) — mount_yaw mirrors the left arm's
+           (no photo of the real hand on the right arm yet — compare again once there is one) -->
       <xacro:amazinghand prefix="right_" parent="right_link_6" side="right" mount_offset="0.025"
                          mount_yaw="${-pi/2}"/>
     </xacro:if>

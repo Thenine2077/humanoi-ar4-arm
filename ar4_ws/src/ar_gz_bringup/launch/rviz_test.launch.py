@@ -1,7 +1,7 @@
-"""ไฟล์ทดสอบ: เปิด move_group (จริง มีข้อมูล robot ครบ) พร้อมกับ rviz2 เปล่าๆ (ไม่มี -d, ไม่มี
-MotionPlanning display) ผ่าน ros2 launch ในไฟล์เดียวกัน เพื่อแยกว่าปัญหาเมาส์กดไม่ได้เกิดจาก
-"เปิดหลายโหนดพร้อมกันผ่าน ros2 launch" หรือเกิดจาก "MotionPlanning/interactive marker
-ที่โหลดมาจาก config ไฟล์ของผู้ขายตั้งแต่ต้น"
+"""Test file: start move_group (real, with full robot data) together with an empty rviz2 (no -d, no
+MotionPlanning display) from one ros2 launch file, to find out whether the mouse-click problem comes from
+"starting several nodes at once via ros2 launch" or from "the MotionPlanning/interactive marker
+loaded from the vendor's config file at startup"
 
   ros2 launch ar_gz_bringup rviz_test.launch.py use_sim_time:=true
 """
@@ -97,8 +97,8 @@ def generate_launch_description():
         ],
     )
 
-    # เพิ่ม -d โหลด config ของผู้ขายเหมือน ar_moveit_jazzy.launch.py ทุกอย่าง
-    # (ตัวแปรสุดท้ายที่ยังไม่ได้แยกทดสอบ)
+    # add -d to load the vendor's config, exactly like ar_moveit_jazzy.launch.py
+    # (the last variable not yet tested on its own)
     rviz_config_file = PathJoinSubstitution([FindPackageShare("ar_gz_bringup"), "config", "ar_moveit.rviz"])
     rviz_node = Node(
         package="rviz2",

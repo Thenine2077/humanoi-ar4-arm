@@ -1,9 +1,9 @@
-"""ไฟล์ log การขยับแขน (motion_log เขียน) และบันทึกเหตุการณ์ (arm broke เขียน) — ไม่ใช้ ROS
+"""Arm motion log files (written by motion_log) and incident records (written by arm broke) — no ROS
 
-โฟลเดอร์: ตัวแปร ARM_LOG_DIR > /humanoi_ws/arm_logs (Pi: ~/Humanoi/ros2_ws/arm_logs) > ~/.ros/arm_logs
-  moves-YYYY-MM-DD.jsonl   1 บรรทัด = แขนขยับ 1 ครั้ง (ท่าก่อน -> ท่าที่ไป ภาระ J1 ความเร็ว ที่มาของคำสั่ง)
-  incidents.jsonl          1 บรรทัด = เหตุการณ์ที่ผู้ใช้จด (รูด/ชน/...) พร้อมสำเนาการขยับที่เกี่ยวข้อง
-เวลาในไฟล์: ts = epoch วินาที, time = เวลาไทย (container ตั้งเป็น UTC จึงบวก 7 ชม. เอง)
+Folder: env var ARM_LOG_DIR > /humanoi_ws/arm_logs (Pi: ~/Humanoi/ros2_ws/arm_logs) > ~/.ros/arm_logs
+  moves-YYYY-MM-DD.jsonl   1 line = 1 arm move (start pose -> target pose, J1 load, speed, command source)
+  incidents.jsonl          1 line = 1 incident logged by the user (slip/collision/...) with a copy of the related moves
+Times in the files: ts = epoch seconds, time = Thai time (the container runs on UTC, so we add 7 h ourselves)
 """
 import glob
 import json
@@ -12,8 +12,8 @@ import os
 import time
 from datetime import datetime, timedelta, timezone
 
-LOCAL_TZ = timezone(timedelta(hours=7))  # เวลาไทย
-POSE_MATCH_DEG = 1.0  # ห่างท่าที่สอนไว้ไม่เกินนี้ทุกข้อ = ถือว่าเป็นท่านั้น
+LOCAL_TZ = timezone(timedelta(hours=7))  # Thai time
+POSE_MATCH_DEG = 1.0  # every joint within this of a taught pose = counts as that pose
 
 
 def log_dir():
@@ -53,14 +53,14 @@ def _read(path):
                     try:
                         out.append(json.loads(line))
                     except ValueError:
-                        pass  # บรรทัดที่เขียนค้างตอนไฟดับ
+                        pass  # line left half-written by a power cut
     except FileNotFoundError:
         pass
     return out
 
 
 def read_moves(since=None):
-    """การขยับทั้งหมด (เก่า -> ใหม่) · since = epoch วินาที อ่านเฉพาะไฟล์วันนั้นเป็นต้นไป"""
+    """All moves (old -> new) · since = epoch seconds; reads only the files from that day on"""
     files = sorted(glob.glob(os.path.join(log_dir(), "moves-*.jsonl")))
     if since is not None:
         first = os.path.basename(moves_file(since))
@@ -76,7 +76,7 @@ def read_incidents():
 
 
 def pose_name(poses, values_rad):
-    """ชื่อท่าที่สอนไว้ซึ่งตรงกับมุมนี้ (ทุกข้อห่างไม่เกิน POSE_MATCH_DEG) — ไม่ตรงท่าไหน = ข้อความว่าง"""
+    """Name of the taught pose matching these angles (every joint within POSE_MATCH_DEG) — no match = empty string"""
     best, best_d = "", POSE_MATCH_DEG
     for name, vals in (poses or {}).items():
         try:
@@ -91,12 +91,12 @@ def pose_name(poses, values_rad):
 def ago(ts, now=None):
     s = int((now or time.time()) - ts)
     if s < 60:
-        return f"{s} วิที่แล้ว"
+        return f"{s} s ago"
     if s < 3600:
-        return f"{s // 60} นาทีที่แล้ว"
+        return f"{s // 60} min ago"
     if s < 86400:
-        return f"{s // 3600} ชม.ที่แล้ว"
-    return f"{s // 86400} วันที่แล้ว"
+        return f"{s // 3600} h ago"
+    return f"{s // 86400} days ago"
 
 
 def angles(vals):
@@ -104,7 +104,7 @@ def angles(vals):
 
 
 def move_text(m):
-    """การขยับ 1 ครั้งเป็นข้อความสั้น: ท่าก่อน → ท่าที่ไป"""
+    """One move as short text: start pose → target pose"""
     a = m.get("from_pose") or angles(m["from"])
     b = m.get("to_pose") or angles(m["to"])
     return f"{a} → {b}"
@@ -113,6 +113,6 @@ def move_text(m):
 def j1_text(m):
     j = m.get("j1")
     if not j:
-        return "ภาระ J1 ?"
-    way = {True: " ยกขึ้น", False: " ลดลง"}.get(j.get("lift_at_peak"), "")
-    return f"ภาระ J1 สูงสุด {j['peak']:.0f}%{way} (ปลายทาง {j['to']:.0f}%)"
+        return "J1 load ?"
+    way = {True: " lifting", False: " lowering"}.get(j.get("lift_at_peak"), "")
+    return f"J1 load max {j['peak']:.0f}%{way} (at target {j['to']:.0f}%)"

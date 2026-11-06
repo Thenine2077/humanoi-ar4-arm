@@ -1,11 +1,11 @@
-# เพดานความเร็ว / ความเร่งของมอเตอร์แต่ละข้อที่ตั้งลงบอร์ด Teensy (คำสั่ง SS) — J1..J6
-# หน่วยของเฟิร์มแวร์: °/s และ °/s² (เฟิร์มแวร์คูณ MOTOR_STEPS_PER_DEG เป็นพัลส์ — มุมที่รายงานจริงเร็วกว่านี้ 2.4%)
-# บอร์ดเปิดมาใช้ 30°/s, 10°/s² ทุกข้อ และลืมค่าที่ตั้งเมื่อรีบูต (ไฟดับ / แฟลช) จึงตั้งใหม่ทุกครั้ง:
-#   arm start / recal / reconnect (ar_zero.py ก่อนเปิดตัวคุม) และ arm calibrate (ar_calibrate.py ก่อนหมุน)
+# Max motor speed / acceleration per joint, set on the Teensy board (SS command) — J1..J6
+# Firmware units: °/s and °/s² (firmware multiplies by MOTOR_STEPS_PER_DEG to get pulses — the reported angle actually moves 2.4% faster)
+# The board boots with 30°/s, 10°/s² on every joint and forgets the setting on reboot (power loss / flash), so it is set again every time:
+#   arm start / recal / reconnect (ar_zero.py before starting the controller) and arm calibrate (ar_calibrate.py before moving)
 #
-# 2026-10-29 J1 เหลือ 11.25 = 500 พัลส์/วินาที เท่าตอน calibrate วิ่งหาสวิตช์ (ผู้ใช้: แทบไม่เคยรูด)
-#   ก่อนหน้านี้ J1 วิ่ง 30°/s ตอนกลับท่าพักหลัง calibrate และตอน MoveIt สั่งเร็ว
-#   ROS ต้องสั่ง J1 ไม่เกิน 0.19 rad/s (10.9°/s) ให้ต่ำกว่าเพดานนี้ (11.5°/s ที่มุมจริง) ไม่งั้นแขนตามไม่ทัน
-#   จนเกิน path tolerance แล้วตัวคุมยกเลิกกลางทาง — ar_program max_speed / ar_dual joint_limits.yaml ตั้งไว้ 0.19
+# 2026-10-29 J1 lowered to 11.25 = 500 pulses/s, same as calibrate's limit-switch search (user: almost never slips)
+#   Before this J1 ran at 30°/s when returning to the rest pose after calibrate and when MoveIt commanded fast moves
+#   ROS must command J1 at no more than 0.19 rad/s (10.9°/s) to stay below this ceiling (11.5°/s in real angle), otherwise the arm falls behind
+#   past the path tolerance and the controller aborts mid-motion — ar_program max_speed / ar_dual joint_limits.yaml are set to 0.19
 speed: [11.25, 30, 30, 30, 30, 30]
 accel: [10, 10, 10, 10, 10, 10]

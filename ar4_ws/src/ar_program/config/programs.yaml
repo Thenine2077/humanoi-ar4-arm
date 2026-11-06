@@ -1,15 +1,15 @@
-# ท่าและโปรแกรมของแขน AR4 สองตัว (left = แขน 1 ซ้ายเมื่อมองจากตัวหุ่น, right = แขน 2)
-# แก้ด้วยมือได้ หรือใช้คำสั่งบน Pi:
-#   arm teach <left|right> <ชื่อท่า>                        บันทึกท่าปัจจุบันของแขนนั้น
-#   arm program <ชื่อ> <ซ้าย>/<ขวา> ... wait=1.0 ...         เช่น  arm program pick2 act1/act1 act2/- -/act3
-#   arm show <ชื่อโปรแกรม>                                 ดูเป็นตาราง
+# Poses and programs of the two AR4 arms (left = arm 1, the robot's own left; right = arm 2)
+# Edit by hand, or use these commands on the Pi:
+#   arm teach <left|right> <pose name>                  save the current pose of that arm
+#   arm program <name> <left>/<right> ... wait=1.0 ...  e.g.  arm program pick2 act1/act1 act2/- -/act3
+#   arm show <program name>                             view as a table
 #
-# poses    : แยกตามแขน มุม joint_1..joint_6 หน่วยเรเดียน
-# programs : ทีละขั้น — {left: ท่า, right: ท่า|still, left_hand: ท่ามือ} หรือ {wait: วินาที}
-#            (ชื่อท่าเปล่าๆ = แขนซ้ายอย่างเดียว)
-# hand_poses: ท่ามือที่สอนเอง (arm hand-teach) องศา servo ID 1-8 — ชื่อซ้ำท่าในตัว = ใช้แทนท่าในตัว
-#             hand_poses = ชุดมือขวา, hand_poses_left = ชุดมือซ้าย (arm hand-side บอกว่าตอนนี้ใส่ตัวไหน)
-# (ไฟล์นี้ถูกเขียนใหม่ทั้งไฟล์ทุกครั้งที่ teach คอมเมนต์ที่เพิ่มเองจะหาย ยกเว้นส่วนหัวนี้)
+# poses    : per arm, angles joint_1..joint_6 in radians
+# programs : step by step — {left: pose, right: pose|still, left_hand: hand gesture} or {wait: seconds}
+#            (bare pose name = left arm only)
+# hand_poses: self-taught hand gestures (arm hand-teach), servo ID 1-8 degrees — same name as a built-in gesture = replaces it
+#             hand_poses = right hand set, hand_poses_left = left hand set (arm hand-side tells which one is fitted now)
+# (this whole file is rewritten on every teach; comments you add will be lost, except this header)
 
 poses:
   left:

@@ -1,22 +1,22 @@
-// Humanoi AR4_ROS2_seq v3 — สำเนาของ AR4_ROS2.ino (เฟิร์มแวร์ ROS ของผู้ขาย ต้นฉบับไม่แก้ อยู่ที่ C:\ar4_fw\AR4_ROS2)
-// ต่างจากต้นฉบับ:
-//  1. JC เลือกข้อต่อได้ (JC5, JC456 ...) ข้ออื่นไม่ขยับ — ต้นฉบับทำ 6 ข้อพร้อมกัน มือที่ติดปลายแขนไปชน (2026-10-16)
-//  2. calibrate ไม่ติดไม่รู้จบ: ข้อที่หมุนเกินระยะเต็ม (+15%) แล้วยังไม่เจอสวิตช์ จะหยุดและรายงาน DB J<n> FAIL
-//     (ต้นฉบับวนรอตลอดกาล บอร์ดไม่ตอบอะไรอีกเลยจนกว่าจะปิดไฟ — เจอกับแขนขวา 2026-10-16) + บอกความคืบหน้าทีละข้อ
-//  3. เก็บ "ชื่อแขน" (JN) และ "ข้อที่มอเตอร์หมุนกลับด้าน" (JD) ไว้ใน EEPROM ของบอร์ด — Teensy สองแขนรายงาน
-//     หมายเลข USB ซ้ำกัน ระบบจึงถามชื่อจากบอร์ดเพื่อหาว่าพอร์ตไหนคือแขนไหน (ย้ายพอร์ตได้) · แขนที่ประกอบข้อใด
-//     กลับด้านตั้ง JD ได้โดยไม่ต้องคอมไพล์ใหม่
-//  4. (v3) ค่าชดเชยศูนย์ข้อต่อ (JZ) เก็บใน EEPROM: มุมที่รายงาน (JP / ตอบ MT) = มุมที่นับได้ + ค่าชดเชย และมุมที่สั่ง (MT)
-//     ลบค่าชดเชยออกก่อนหมุน -> ตัวเลขในโปรแกรมเป็นมุมจริงที่วัดด้วยระดับน้ำ · calibrate / ท่าพัก / ระยะหมุนจริงไม่เปลี่ยน
-//     (เดิมมุมที่นับได้ของข้อ 5 แขนซ้ายคลาดจากจริง −19° — 2026-10-26)
-//  คำสั่งเพิ่ม: JV -> "JVseq3" · JN / JN=<ชื่อ> · JD / JD=<6 หลัก 0|1 ของ J1..J6> · JZ / JZ=<6 ค่า องศา คั่นด้วย ,>
-//  คำสั่งอื่น (ST MT JP SS) และ JC เปล่าทำงานเหมือนต้นฉบับ
+// Humanoi AR4_ROS2_seq v3 — copy of AR4_ROS2.ino (the vendor's ROS firmware; the original is untouched, at C:\ar4_fw\AR4_ROS2)
+// Differences from the original:
+//  1. JC can select joints (JC5, JC456 ...); other joints don't move — the original did all 6 at once and the hand on the arm tip crashed (2026-10-16)
+//  2. calibration can't hang forever: a joint that travels past its full range (+15%) without finding its switch stops and reports DB J<n> FAIL
+//     (the original looped forever and the board answered nothing until power-off — happened on the right arm 2026-10-16) + per-joint progress messages
+//  3. stores the "arm name" (JN) and "joints whose motor turns reversed" (JD) in the board's EEPROM — the two arms' Teensys report
+//     the same USB serial number, so the system asks each board its name to find which port is which arm (ports can move) · an arm with a joint
+//     assembled reversed can set JD without recompiling
+//  4. (v3) joint zero trims (JZ) stored in EEPROM: reported angle (JP / MT reply) = counted angle + trim, and the commanded angle (MT)
+//     has the trim subtracted before moving -> numbers in programs are true angles measured with a spirit level · calibration / rest pose / actual travel unchanged
+//     (previously the counted angle of joint 5 on the left arm was off from the true angle by −19° — 2026-10-26)
+//  Added commands: JV -> "JVseq3" · JN / JN=<name> · JD / JD=<6 digits 0|1 for J1..J6> · JZ / JZ=<6 values in degrees, comma-separated>
+//  Other commands (ST MT JP SS) and plain JC work as in the original
 
 #include <AccelStepper.h>
 #include <Encoder.h>
 #include <avr/pgmspace.h> // 用于访问程序空间的库
 #include <math.h> // 提供数学函数的库
-#include <EEPROM.h> // Humanoi: ชื่อแขน + ทิศมอเตอร์ + ค่าชดเชยศูนย์ ที่เก็บในบอร์ด
+#include <EEPROM.h> // Humanoi: arm name + motor directions + zero trims stored on the board
 
 // 固件版本
 const char* VERSION = "0.0.1";
@@ -88,16 +88,16 @@ char JOINT_NAMES[] = {'A', 'B', 'C', 'D', 'E', 'F'};
 // ENC_RANGE_STEPS: 每个关节的编码器步数数组，用于定义关节数字编码器的运动范围
 int ENC_RANGE_STEPS[NUM_JOINTS];
 
-// ---------- Humanoi: ค่าที่เก็บในบอร์ด (EEPROM) ----------
-// [0..3] "HUM2"  [4] บิตข้อที่มอเตอร์หมุนกลับด้าน (bit0 = J1)  [8..39] ชื่อแขน (จบด้วย 0)
-// [40..51] ค่าชดเชยศูนย์ J1..J6 (int16 หน่วย 0.01°)  [52..53] "Z1" = มีค่าชดเชย (บอร์ด v2 เดิมไม่มี -> 0 ทุกข้อ)
-// ยังใช้ "HUM2" เหมือน v2 — ย้อนไปลง v2 แล้วชื่อแขน/ทิศมอเตอร์ไม่หาย
+// ---------- Humanoi: values stored on the board (EEPROM) ----------
+// [0..3] "HUM2"  [4] bits of joints whose motor turns reversed (bit0 = J1)  [8..39] arm name (0-terminated)
+// [40..51] zero trims J1..J6 (int16, units of 0.01°)  [52..53] "Z1" = trims present (old v2 boards have none -> 0 for every joint)
+// Still uses "HUM2" like v2 — going back to v2 keeps the arm name/motor directions
 const int EE_MAGIC = 0, EE_DIRMASK = 4, EE_NAME = 8, NAME_LEN = 32, EE_ZERO = 40, EE_ZERO_MARK = 52;
 const float ZERO_MAX_DEG = 45.0;
 uint8_t dirMask = 0;
 char armName[NAME_LEN] = "";
-float zeroTrim[6] = {0, 0, 0, 0, 0, 0};  // องศา: มุมที่รายงาน = มุมที่นับ + zeroTrim
-// ทิศ DIR ตั้งต้นของต้นฉบับ: ทุกข้อกลับ (DM542T) ยกเว้น J4 (DM320T)
+float zeroTrim[6] = {0, 0, 0, 0, 0, 0};  // degrees: reported angle = counted angle + zeroTrim
+// Original default DIR: every joint inverted (DM542T) except J4 (DM320T)
 const bool DEFAULT_DIR_INVERT[] = {true, true, true, false, true, true};
 
 void loadSettings() {
@@ -193,13 +193,13 @@ void readMotorSteps(int* motorSteps) {
 
 void encStepsToJointPos(int* encSteps, double* jointPos) {
   for (int i = 0; i < NUM_JOINTS; ++i) {
-    jointPos[i] = encSteps[i] / MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i] + zeroTrim[i];  // Humanoi: + ค่าชดเชยศูนย์
+    jointPos[i] = encSteps[i] / MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i] + zeroTrim[i];  // Humanoi: + zero trim
   }
 }
 
 void jointPosToEncSteps(double* jointPos, int* encSteps) {
   for (int i = 0; i < NUM_JOINTS; ++i) {
-    encSteps[i] = (jointPos[i] - zeroTrim[i]) * MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i];  // Humanoi: − ค่าชดเชยศูนย์
+    encSteps[i] = (jointPos[i] - zeroTrim[i]) * MOTOR_STEPS_PER_DEG[i] * ENC_DIR[i];  // Humanoi: − zero trim
   }
 }
 
@@ -245,7 +245,7 @@ int calibrateJoints(int* calJoints) {
   // 检查要校准的关节
   bool calAllDone = false;
   bool calJointsDone[NUM_JOINTS];
-  // Humanoi: หมุนได้ไม่เกินระยะเต็มของข้อ +15% — เกินแล้วยังไม่เจอสวิตช์ = ทิศผิด/สวิตช์เสีย/ติดอะไรอยู่ -> หยุดข้อนั้น
+  // Humanoi: a joint may travel at most its full range +15% — past that with no switch = wrong direction/broken switch/something stuck -> stop that joint
   long startPos[NUM_JOINTS];
   long maxTravel[NUM_JOINTS];
   int failed = 0;
@@ -267,7 +267,7 @@ int calibrateJoints(int* calJoints) {
         // 检查限位开关
         if (!reachedLimitSwitch(i)) {
           if (labs(stepperJoints[i].currentPosition() - startPos[i]) > maxTravel[i]) {
-            // Humanoi: หมุนครบระยะแล้วยังไม่เจอสวิตช์ — หยุด ไม่วนรอตลอดกาล
+            // Humanoi: full range travelled and still no switch — stop instead of looping forever
             stepperJoints[i].setSpeed(0);
             calJointsDone[i] = true;
             calJoints[i] = 0;
@@ -293,13 +293,13 @@ int calibrateJoints(int* calJoints) {
 }
 
 void moveAwayFromLimitSwitch(int* calJoints) {
-  // 使关节远离限位开关 (Humanoi: เฉพาะข้อที่เพิ่ง calibrate — ข้ออื่นไม่ขยับ)
+  // 使关节远离限位开关 (Humanoi: only the joints just calibrated — other joints don't move)
   for (int i = 0; i < NUM_JOINTS; i++) {
     stepperJoints[i].setSpeed(calJoints[i] ? CAL_SPEED * CAL_SPEED_MULT[i] * CAL_DIR[i] * -1 : 0);
   }
   for (int j = 0; j < 10000000; j++) {
     for (int i = 0; i < NUM_JOINTS; ++i) {
-      stepperJoints[i].runSpeed();  // ข้อที่ไม่ได้เลือก speed = 0 ไม่ขยับ (คงจำนวนรอบ/เวลาถอยเท่าต้นฉบับ)
+      stepperJoints[i].runSpeed();  // unselected joints have speed = 0 and don't move (loop count/back-off time same as the original)
     }
   }
   // 冗余
@@ -354,7 +354,7 @@ void stateTRAJ() {
   }
   // J4使用DM320T反向
   stepperJoints[3].setPinsInverted(false, false, false);
-  applyDirections();  // Humanoi: ทิศตั้งต้นข้างบน + ข้อที่ตั้งกลับด้านไว้ (JD)
+  applyDirections();  // Humanoi: default directions above + joints set to reversed (JD)
 
   // 主循环：等待和处理来自主机的消息
   while (STATE == STATE_TRAJ) {
@@ -406,9 +406,9 @@ void stateTRAJ() {
         }
       } else if (function == "JC") {
         // 执行关节校准
-        // Humanoi: "JC" เปล่า = ทั้ง 6 ข้อพร้อมกัน (เหมือนต้นฉบับ) · "JC" ตามด้วยเลขข้อ เช่น "JC5" / "JC456"
-        // = calibrate เฉพาะข้อนั้น (หลายตัวทำพร้อมกัน) ข้ออื่นไม่ขยับเลยตลอดคำสั่ง — ไว้ทำทีละข้อตามลำดับ
-        // ที่มือ/อุปกรณ์ปลายแขนไม่ชน (ต้นฉบับทำทั้ง 6 ข้อพร้อมกันเสมอ)
+        // Humanoi: plain "JC" = all 6 joints at once (like the original) · "JC" followed by joint numbers, e.g. "JC5" / "JC456"
+        // = calibrate only those joints (several run together); other joints don't move at all during the command — for doing one joint at a time
+        // in an order where the hand/end-of-arm tooling doesn't collide (the original always did all 6 joints at once)
         int calJoints[] = {0, 0, 0, 0, 0, 0};
         bool anyJoint = false;
         for (unsigned int k = 2; k < inData.length(); ++k) {
@@ -421,7 +421,7 @@ void stateTRAJ() {
         if (!anyJoint) {
           for (int i = 0; i < NUM_JOINTS; ++i) calJoints[i] = 1;
         }
-        int failedJoints = calibrateJoints(calJoints);  // Humanoi: ข้อที่ไม่เจอสวิตช์ถูกตัดออกจาก calJoints แล้ว
+        int failedJoints = calibrateJoints(calJoints);  // Humanoi: joints that didn't find their switch have already been removed from calJoints
 
         // 记录编码器校准位置
         int calSteps[6];
@@ -432,7 +432,7 @@ void stateTRAJ() {
 
         // 设置编码器初始位置
         for (int i = 0; i < NUM_JOINTS; ++i) {
-          if (!calJoints[i]) continue;  // Humanoi: ข้อที่ไม่ได้ calibrate คงตำแหน่งเดิม
+          if (!calJoints[i]) continue;  // Humanoi: joints not calibrated keep their position
           // encPos[i].write(ENC_RANGE_STEPS[i] * ENC_MAX_AT_ANGLE_MIN[i]);
           stepperJoints[i].setCurrentPosition(ENC_RANGE_STEPS[i] * ENC_MAX_AT_ANGLE_MIN[i]/10.24 * ENC_DIR[i]);
         }
@@ -450,7 +450,7 @@ void stateTRAJ() {
 
         // 等待关节回到休息位置
         bool restPosReached = false;
-        unsigned long restStart = millis();  // Humanoi: กันวนรอไม่รู้จบถ้ากลับท่าพักไม่ได้
+        unsigned long restStart = millis();  // Humanoi: avoid looping forever if the rest pose can't be reached
         while (!restPosReached) {
           if (millis() - restStart > 60000) {
             Serial.println("DB REST TIMEOUT - joint could not return to rest in 60 s");
@@ -460,7 +460,7 @@ void stateTRAJ() {
           readMotorSteps(curMotorSteps);
 
           for (int i = 0; i < NUM_JOINTS; ++i) {
-            if (!calJoints[i]) continue;  // Humanoi: เฉพาะข้อที่ calibrate กลับท่าพัก
+            if (!calJoints[i]) continue;  // Humanoi: only calibrated joints return to the rest pose
             if (abs(REST_ENC_POSITIONS[i] / ENC_MULT[i] - curMotorSteps[i]) >
                 10) {
               restPosReached = false;
@@ -477,7 +477,7 @@ void stateTRAJ() {
         String msg = String("JC") + "A" + calSteps[0] + "B" + calSteps[1] +
                      "C" + calSteps[2] + "D" + calSteps[3] + "E" + calSteps[4] +
                      "F" + calSteps[5];
-        if (failedJoints) {  // Humanoi: สรุปข้อที่ calibrate ไม่สำเร็จ ก่อนตอบ JC (ตำแหน่งข้อนั้นยังใช้ไม่ได้)
+        if (failedJoints) {  // Humanoi: list the joints that failed calibration before the JC reply (their positions are not usable yet)
           String f = "DB CAL FAILED";
           for (int i = 0; i < NUM_JOINTS; ++i) {
             if (failedJoints & (1 << i)) f += String(" J") + (i + 1);
@@ -509,11 +509,11 @@ void stateTRAJ() {
         String msg = String("JP") + JointPosToString(curJointPos);
         Serial.println(msg);
       } else if (function == "JV") {
-        // Humanoi: บอกว่าเป็นฉบับนี้ — ar_calibrate.py / ar_ports.py เช็กก่อนส่ง JC5, JN ฯลฯ
-        // (ต้นฉบับไม่ตอบ JV และจะ calibrate ทั้ง 6 ข้อถ้าได้ JC5 — ห้ามส่งให้ต้นฉบับ)
+        // Humanoi: identifies this version — ar_calibrate.py / ar_ports.py check it before sending JC5, JN, etc.
+        // (the original doesn't answer JV and would calibrate all 6 joints on JC5 — never send it to the original)
         Serial.println("JVseq3");
       } else if (function == "JN") {
-        // Humanoi: ชื่อแขน "JN" = ถาม, "JN=left" = ตั้ง (เก็บใน EEPROM)
+        // Humanoi: arm name "JN" = query, "JN=left" = set (stored in EEPROM)
         String arg = inData.substring(2);
         arg.trim();
         if (arg.startsWith("=")) {
@@ -524,7 +524,7 @@ void stateTRAJ() {
         }
         Serial.println(String("JN") + armName);
       } else if (function == "JD") {
-        // Humanoi: ข้อที่มอเตอร์หมุนกลับด้าน "JD" = ถาม, "JD=000010" = ตั้ง (J1..J6, 1 = กลับ) เก็บใน EEPROM
+        // Humanoi: joints whose motor turns reversed "JD" = query, "JD=000010" = set (J1..J6, 1 = reversed) stored in EEPROM
         String arg = inData.substring(2);
         arg.trim();
         if (arg.startsWith("=") && arg.length() == 1 + NUM_JOINTS) {
@@ -538,8 +538,8 @@ void stateTRAJ() {
         }
         Serial.println(String("JD") + dirMaskString());
       } else if (function == "JZ") {
-        // Humanoi: ค่าชดเชยศูนย์ "JZ" = ถาม, "JZ=0,0,0,0,19,0" = ตั้ง (องศา J1..J6 ไม่เกิน ±45) เก็บใน EEPROM
-        // มีผลทันทีกับตัวเลขที่รายงาน/รับ — ตั้งตอนระบบ ROS ปิดอยู่เท่านั้น (ไม่งั้นตำแหน่งที่ ROS เห็นกระโดด)
+        // Humanoi: zero trims "JZ" = query, "JZ=0,0,0,0,19,0" = set (degrees J1..J6, max ±45) stored in EEPROM
+        // takes effect immediately on reported/received numbers — set it only while ROS is off (otherwise the position ROS sees jumps)
         String arg = inData.substring(2);
         arg.trim();
         if (arg.startsWith("=")) {

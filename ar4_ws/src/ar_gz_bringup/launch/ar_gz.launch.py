@@ -22,15 +22,15 @@ from launch_ros.actions import Node
 
 
 def sim_robot_description() -> str:
-    """URDF สำหรับ sim: เหมือนของผู้ขายทุกอย่าง ยกเว้นแก้ effort/velocity limit ที่เป็น 0
+    """URDF for sim: same as the vendor's in every way, except the effort/velocity limits that are 0 are fixed
 
-    ar_description/urdf/ar_macro.xacro ของผู้ขาย (อ่านอย่างเดียว ไม่แก้ไฟล์นั้น) ตั้ง
-    effort="0" ไว้แทบทุกข้อ (และ joint_2 ตั้ง velocity="0") ค่าพวกนี้ไม่มีผลกับแขนจริง
-    เพราะฝั่งจริงสั่งงานผ่าน serial ไม่ได้อ่านค่านี้ — แต่ในซิม ฟิสิกส์เอาไปใช้ตรงๆ
-    effort=0 แปลว่ามอเตอร์ข้อต่อออกแรงได้ 0 Nm ข้อต่อจึงเป็นอิสระ แรงโน้มถ่วงดึงแขน
-    ตกลงจนชน hard-stop ภายในไม่กี่สิบวินาที เห็นผลเฉพาะข้อที่รับแรงโน้มถ่วง (joint_3,
-    joint_5) ส่วน joint_1/4/6 หมุนรอบแกนตั้งจึงอยู่ที่ 0 ได้ — ตรงกับที่ MoveIt รายงาน
-    CheckStartStateBounds หลุด bounds เฉพาะ joint_3/joint_5 ทุกครั้ง
+    The vendor's ar_description/urdf/ar_macro.xacro (read only, that file is not edited) sets
+    effort="0" on almost every joint (and joint_2 has velocity="0"). These values have no effect on the real arm,
+    because the real side is driven over serial and never reads them — but in sim, the physics uses them directly.
+    effort=0 means the joint motor can apply 0 Nm, so the joint is free and gravity pulls the arm
+    down until it hits the hard stop within a few tens of seconds. Only joints that carry gravity load show it (joint_3,
+    joint_5); joint_1/4/6 rotate about a vertical axis so they can stay at 0 — matching how MoveIt reported
+    CheckStartStateBounds out of bounds only for joint_3/joint_5 every time
     """
     urdf = xacro.process_file(
         os.path.join(
@@ -38,7 +38,7 @@ def sim_robot_description() -> str:
         ),
         mappings={
             "name": "ar",
-            # ใช้ controllers.yaml ของผู้ขายตรงๆ ไม่แก้ไข
+            # use the vendor's controllers.yaml as is, unmodified
             "simulation_controllers": os.path.join(
                 get_package_share_directory("ar_hardware_interface"),
                 "config",
@@ -56,9 +56,9 @@ def generate_launch_description():
 
     robot_description = {"robot_description": sim_robot_description()}
 
-    # gui:=false -> รัน gz แบบ server อย่างเดียว (-s) ไม่เปิดหน้าต่าง 3D
-    # ใช้ตอนรันคู่กับแขนจริง: การเรนเดอร์ Ogre2 ผ่าน WSLg กิน CPU หนักจน usbip (USB ของ
-    # Teensy ที่ส่งจาก Windows เข้า WSL) timeout แล้ว serial หลุด — ดูซิมผ่าน RViz แทนได้
+    # gui:=false -> run gz as server only (-s), no 3D window
+    # Use this when running together with the real arm: Ogre2 rendering through WSLg loads the CPU so much that usbip (the
+    # Teensy's USB forwarded from Windows into WSL) times out and serial drops — watch the sim in RViz instead
     gz_args = PythonExpression(
         [
             "'-r -v3 empty.sdf' if '",
@@ -111,7 +111,7 @@ def generate_launch_description():
             "gui",
             default_value="true",
             choices=["true", "false"],
-            description="เปิดหน้าต่าง 3D ของ Gazebo หรือไม่ (false = server อย่างเดียว ประหยัด CPU)",
+            description="Open the Gazebo 3D window or not (false = server only, saves CPU)",
         ),
         gz_sim,
         clock_bridge,

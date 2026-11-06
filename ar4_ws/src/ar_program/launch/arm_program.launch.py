@@ -1,14 +1,14 @@
-"""เปิดตัวเล่นโปรแกรมท่า (arm_program)
+"""Start the pose program player (arm_program)
 
-  # แขนจริงสองตัวบน Pi (ar_dual dual_hardware.launch.py) — ค่าเริ่มต้น
+  # two real arms on the Pi (ar_dual dual_hardware.launch.py) — default
   ros2 launch ar_program arm_program.launch.py
-  # ซิมแขนเดี่ยว (ar_gz_bringup ar_gz.launch.py) หรือแขนจริงแบบเดี่ยว (ar_hardware.launch.py)
+  # single-arm sim (ar_gz_bringup ar_gz.launch.py) or a single real arm (ar_hardware.launch.py)
   ros2 launch ar_program arm_program.launch.py layout:=single
-  # แขนจริงในชุด ar_mirror dual_real_sim.launch.py (แขนจริงอยู่ใต้ namespace /real)
+  # real arm in the ar_mirror dual_real_sim.launch.py setup (the real arm is under the /real namespace)
   ros2 launch ar_program arm_program.launch.py layout:=single arm_ns:=real
 
-ในชุด dual_real_sim ให้ป้อนโปรแกรมเข้า "ซิม" (arm_ns ว่าง) ก็พอ — joint_mirror จะพาแขนจริงตามเอง
-ใช้ arm_ns:=real เฉพาะตอนอยากสั่งแขนจริงตรงๆ โดยไม่ผ่านซิม
+In the dual_real_sim setup, feeding programs to the "sim" (empty arm_ns) is enough — joint_mirror makes the real arm follow
+Use arm_ns:=real only when you want to command the real arm directly, bypassing the sim
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -36,11 +36,11 @@ def setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("layout", default_value="dual", choices=["dual", "single"],
-                              description="dual = สองแขน ar_dual, single = แขนเดี่ยวแบบเดิม (ซิม/ar_hardware)"),
+                              description="dual = two arms (ar_dual), single = old single arm (sim/ar_hardware)"),
         DeclareLaunchArgument("arm_ns", default_value="",
-                              description="(single เท่านั้น) namespace ของแขน ('' = ซิม/แขนเดี่ยว, real = แขนจริงในชุด dual_real_sim)"),
+                              description="(single only) arm namespace ('' = sim/single arm, real = real arm in the dual_real_sim setup)"),
         DeclareLaunchArgument("speed", default_value="0.19",
-                              description="ความเร็วช่วงวิ่งคงที่ rad/s (0.19 ≈ 11°/วิ = J1 ตอน calibrate = เพดาน)"),
+                              description="cruise speed in rad/s (0.19 ≈ 11°/s = J1 during calibrate = the ceiling)"),
         DeclareLaunchArgument("use_sim_time", default_value="false", choices=["true", "false"]),
         OpaqueFunction(function=setup),
     ])

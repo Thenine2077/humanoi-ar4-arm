@@ -1,17 +1,17 @@
-"""แขน AR4 สองตัวพร้อมกัน: ros2_control แขนละโปรเซส + robot_state_publisher + ตัวรวม joint_states
+"""Both AR4 arms together: ros2_control in one process per arm + robot_state_publisher + joint_states merger
 
-  ros2 launch ar_dual dual_hardware.launch.py                    # สองแขนจริง (arm start เรียกตัวนี้)
-  ros2 launch ar_dual dual_hardware.launch.py right_hw:=mock     # แขนซ้ายจริง แขนขวาจำลอง (ไม่ต่อบอร์ด)
-  ros2 launch ar_dual dual_hardware.launch.py left_hw:=mock right_hw:=mock   # จำลองทั้งคู่ ไว้ลองโปรแกรม
+  ros2 launch ar_dual dual_hardware.launch.py                    # both arms real (arm start calls this)
+  ros2 launch ar_dual dual_hardware.launch.py right_hw:=mock     # left arm real, right arm simulated (no board)
+  ros2 launch ar_dual dual_hardware.launch.py left_hw:=mock right_hw:=mock   # both simulated, for trying programs
 
-แต่ละแขนมีตัวคุมของตัวเอง (launch/arm_hardware.launch.py) — ปิด/คาลิเบรต/เปิดแขนเดียวได้ อีกแขนทำงานต่อ
-(arm recal / arm reconnect) · joint_state_publisher รวม /left/joint_states + /right/joint_states เป็น /joint_states
-ครบ 12 ข้อ (แขนที่ปิดอยู่ = ค่าล่าสุดค้างไว้ Teensy ถือท่านั้นอยู่)
-ตัวคุม: /left_arm_controller/follow_joint_trajectory, /right_arm_controller/follow_joint_trajectory
-ข้อต่อ: left_joint_1..6, right_joint_1..6 · TF: torso -> left_base_link / right_base_link -> ...
-ไม่ calibrate ที่นี่ — calibrate ก่อนด้วย ar_calibrate.py (arm calibrate left|right) แล้วค่อยเปิดตัวนี้
-motion_log (ar_program) จดทุกการขยับไว้ให้ arm broke ดึงไปเก็บตอนเกิดเรื่อง (สายพานรูด ชน ...)
-พอร์ตต้องอ้างด้วย /dev/serial/by-path: Teensy ทั้งสองตัวรายงานหมายเลขเดียวกัน by-id จึงแยกไม่ได้
+Each arm has its own controller (launch/arm_hardware.launch.py) — one arm can be stopped/calibrated/restarted while the other keeps working
+(arm recal / arm reconnect) · joint_state_publisher merges /left/joint_states + /right/joint_states into /joint_states
+with all 12 joints (a stopped arm = last values held; the Teensy holds that pose)
+Controllers: /left_arm_controller/follow_joint_trajectory, /right_arm_controller/follow_joint_trajectory
+Joints: left_joint_1..6, right_joint_1..6 · TF: torso -> left_base_link / right_base_link -> ...
+No calibration here — calibrate first with ar_calibrate.py (arm calibrate left|right), then start this
+motion_log (ar_program) records every motion so arm broke can save it when an incident happens (belt slip, collision ...)
+Ports must be given as /dev/serial/by-path: both Teensys report the same serial number, so by-id cannot tell them apart
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
@@ -22,10 +22,10 @@ from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 ARGS = {
-    "left_port": ("/dev/serial/by-path/platform-xhci-hcd.0-usb-0:1:1.0", "พอร์ต Teensy แขนซ้าย"),
-    "right_port": ("/dev/serial/by-path/platform-xhci-hcd.1-usb-0:2:1.0", "พอร์ต Teensy แขนขวา"),
-    "left_hw": ("real", "real = ต่อ Teensy จริง, mock = จำลอง"),
-    "right_hw": ("real", "real = ต่อ Teensy จริง, mock = จำลอง"),
+    "left_port": ("/dev/serial/by-path/platform-xhci-hcd.0-usb-0:1:1.0", "left arm Teensy port"),
+    "right_port": ("/dev/serial/by-path/platform-xhci-hcd.1-usb-0:2:1.0", "right arm Teensy port"),
+    "left_hw": ("real", "real = real Teensy, mock = simulated"),
+    "right_hw": ("real", "real = real Teensy, mock = simulated"),
 }
 
 

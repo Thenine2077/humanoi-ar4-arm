@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""motion_log — จดทุกครั้งที่แขนขยับ: ท่าก่อน -> ท่าที่ไป, ภาระ J1 ระหว่างทาง, ความเร็ว, ใครสั่ง, ผลของตัวคุม
+"""motion_log — logs every arm move: start pose -> target pose, J1 load along the way, speed, who commanded it, controller result
 
-เปิดเองพร้อมระบบแขน (ar_dual dual_hardware.launch.py = arm start) ไม่ต้องสั่งเอง
-ไว้คู่กับ arm broke: เกิดเรื่อง (สายพานรูด แขนชน ...) พิมพ์ arm broke slipped แล้ว broke.py ดึงการขยับล่าสุด
-จากไฟล์นี้ไปเก็บกับเหตุการณ์ — พอสะสมไว้หลายครั้งก็ดูได้ว่าท่า/ทางไหนรูดบ่อย (arm broke report)
+Starts automatically with the arm system (ar_dual dual_hardware.launch.py = arm start); no need to run it yourself
+Pairs with arm broke: when something goes wrong (belt slip, arm collision ...) type arm broke slipped and broke.py pulls the latest moves
+from this log into the incident — once several have built up you can see which poses/paths slip often (arm broke report)
 
-แบ่งการขยับ 1 ครั้งตาม goal ของตัวคุมแขน (ทุกคำสั่งเข้าทางนี้: arm player / goto / MoveIt / เกม / หยิบกล่อง)
-— goal ใหม่มา = ปิดครั้งก่อน เปิดครั้งใหม่ · ไม่มี goal (เช่นซิม) = ขยับเกิน 0.2° เริ่ม นิ่ง 0.4 วินาทีจบ
-ตำแหน่งที่จดคือตัวเลขที่บอร์ดนับ (มอเตอร์ไม่มี encoder) — ตอนรูด ตัวเลขยังเป็นท่าที่สั่ง ไม่ใช่ท่าที่แขนอยู่จริง
+One move = one arm controller goal (every command goes through it: arm player / goto / MoveIt / games / box picking)
+— a new goal closes the previous move and opens a new one · no goal (e.g. sim) = starts after moving over 0.2°, ends after 0.4 s still
+Logged positions are the board's step counts (motors have no encoders) — after a slip the numbers still show the commanded pose, not where the arm really is
 
-หัวข้อ: /joint_states, /arm/state (ตัวเล่นโปรแกรม), <แขน>_arm_controller/follow_joint_trajectory/_action/status,
-       /move_action และ /execute_trajectory/_action/status (MoveIt), /robot_description (คำนวณภาระ J1)
-ไฟล์: ar_program/arm_log.py (<ARM_LOG_DIR>/moves-YYYY-MM-DD.jsonl)
+Topics: /joint_states, /arm/state (program player), <arm>_arm_controller/follow_joint_trajectory/_action/status,
+       /move_action and /execute_trajectory/_action/status (MoveIt), /robot_description (J1 load calculation)
+File: ar_program/arm_log.py (<ARM_LOG_DIR>/moves-YYYY-MM-DD.jsonl)
 """
 import math
 import socket
@@ -27,14 +27,14 @@ from std_msgs.msg import String
 
 from ar_program import arm_log, j1_load, programs
 
-START_DEG = 0.2      # ขยับจากท่านิ่งเกินนี้ = เริ่มขยับ (ไม่มี goal)
-STILL_S = 0.4        # ไม่ขยับนานเท่านี้ = จบ (ถ้าตัวคุมบอกผลแล้ว หรือไม่มี goal)
-STILL_MAX_S = 3.0    # goal ยังไม่จบแต่แขนนิ่งนานขนาดนี้ = จบไปก่อน
-SAMPLE_S = 0.1       # เก็บท่าระหว่างทางทุก 0.1 วินาที (ไว้คำนวณภาระ J1 / ความเร็ว)
-MAX_SAMPLES = 600    # ยาวกว่านี้ (60 วินาที) ข้ามบางจุด
-CHANGE_RAD = 1e-4    # ตัวเลขเปลี่ยนเกินนี้ = ยังขยับอยู่ (บอร์ดนับละเอียด ~0.02°)
-# เปลี่ยนเกิน JUMP_DEG ในข้อความเดียว และเร็วเกิน JUMP_DEG_S = ตัวเลขกระโดด (เช่นหลัง recal ตัวคุมเพิ่งกลับมา)
-# ไม่ใช่การขยับ — มอเตอร์หมุนได้ไม่เกิน ~31°/s · ข้อความมาช้า (เครื่องหน่วง) ยังนับเป็นการขยับ
+START_DEG = 0.2      # moved more than this from the still pose = move started (no goal)
+STILL_S = 0.4        # no motion for this long = done (if the controller has reported a result, or no goal)
+STILL_MAX_S = 3.0    # goal not finished but the arm has been still this long = end it anyway
+SAMPLE_S = 0.1       # sample the pose along the way every 0.1 s (for J1 load / speed)
+MAX_SAMPLES = 600    # longer than this (60 s) drops every other point
+CHANGE_RAD = 1e-4    # number changed by more than this = still moving (the board counts in ~0.02° steps)
+# A change over JUMP_DEG in one message, faster than JUMP_DEG_S = the numbers jumped (e.g. after recal, the controller just came back)
+# not a move — the motors turn at most ~31°/s · messages arriving late (laggy machine) still count as moves
 JUMP_DEG = 3.0
 JUMP_DEG_S = 120.0
 ACTIVE = (GoalStatus.STATUS_ACCEPTED, GoalStatus.STATUS_EXECUTING)
@@ -59,8 +59,8 @@ class Segment:
 class MotionLog(Node):
     def __init__(self):
         super().__init__("arm_motion_log")
-        self.arms = {}  # แขน -> {"anchor": ท่านิ่งล่าสุด, "seg": Segment|None, "last": ท่าล่าสุด}
-        self.goals = {arm: {} for arm in programs.ARMS}  # uuid -> สถานะล่าสุด
+        self.arms = {}  # arm -> {"anchor": last still pose, "seg": Segment|None, "last": latest pose}
+        self.goals = {arm: {} for arm in programs.ARMS}  # uuid -> latest status
         self.moveit_active = 0.0
         self.arm_state = ""
         self.loader = None
@@ -76,9 +76,9 @@ class MotionLog(Node):
         for name in ("/move_action", "/execute_trajectory"):
             self.create_subscription(GoalStatusArray, f"{name}/_action/status", self.on_moveit, 10)
         self.create_timer(3.0, self.fallback_description)
-        self.get_logger().info(f"บันทึกการขยับแขนลง {arm_log.log_dir()} (arm broke = จดเหตุการณ์)")
+        self.get_logger().info(f"Logging arm moves to {arm_log.log_dir()} (arm broke = log an incident)")
 
-    # ---------- โมเดล (ภาระ J1) ----------
+    # ---------- model (J1 load) ----------
     def on_description(self, msg):
         if self.loader is None:
             self.set_loader(msg.data, "/robot_description")
@@ -87,8 +87,8 @@ class MotionLog(Node):
         if self.loader is None and time.time() - self.t_start > 5.0:
             try:
                 self.set_loader(j1_load.urdf_text(), "xacro")
-            except Exception as exc:  # ไม่มีโมเดล = จดได้ แต่ไม่มีภาระ J1
-                self.get_logger().warn(f"โหลดโมเดลไม่ได้ ({exc}) — ไม่คำนวณภาระ J1")
+            except Exception as exc:  # no model = still logs, but without J1 load
+                self.get_logger().warn(f"Could not load the model ({exc}) — J1 load not calculated")
                 self.loader = False
 
     def set_loader(self, xml, where):
@@ -96,7 +96,7 @@ class MotionLog(Node):
             loader = j1_load.J1Load(xml)
             ref = {arm: round(loader.reference(arm), 3) for arm in programs.ARMS if loader.has_arm(arm)}
         except Exception as exc:
-            self.get_logger().warn(f"โมเดลจาก {where} ใช้คำนวณภาระ J1 ไม่ได้: {exc}")
+            self.get_logger().warn(f"Model from {where} cannot be used for J1 load: {exc}")
             return
         self.loader = loader
         now = time.time()
@@ -104,7 +104,7 @@ class MotionLog(Node):
             "type": "session", "ts": round(now, 3), "time": arm_log.local_time(now), "host": socket.gethostname(),
             "model": where, "j1_ref_nm": ref, "speed_cap": programs_speed_note()})
 
-    # ---------- ที่มาของคำสั่ง ----------
+    # ---------- command source ----------
     def on_arm_state(self, msg):
         self.arm_state = msg.data
 
@@ -132,7 +132,7 @@ class MotionLog(Node):
                 st = self.arms.get(arm)
                 if st and st["seg"] is not None and st["seg"].goal == uid:
                     st["seg"].result = RESULT[s.status]
-        if len(known) > 200:  # goal เก่าสะสม — เก็บไว้แค่ที่ยังอยู่ในข้อความล่าสุด
+        if len(known) > 200:  # old goals pile up — keep only those still in the latest message
             keep = {bytes(s.goal_info.goal_id.uuid) for s in msg.status_list}
             self.goals[arm] = {k: v for k, v in known.items() if k in keep}
 
@@ -142,17 +142,17 @@ class MotionLog(Node):
             return
         seg = st["seg"]
         if seg is not None and seg.moved and seg.goal is None and now - seg.t0 < 1.0:
-            seg.goal, seg.src = uid, self.source()  # สถานะ goal มาช้ากว่าแขนเริ่มขยับนิดหน่อย = ครั้งเดียวกัน
+            seg.goal, seg.src = uid, self.source()  # goal status arrives slightly after the arm starts moving = same move
             return
         if seg is not None and seg.moved:
-            self.close(arm, now, "goal ใหม่")
+            self.close(arm, now, "new goal")
             seg = None
         if seg is None:
             st["seg"] = Segment(now, st["last"], uid, self.source())
         else:
             seg.goal, seg.src = uid, self.source()
 
-    # ---------- ท่าแขน ----------
+    # ---------- arm pose ----------
     def on_joints(self, msg):
         now = time.time()
         pos = dict(zip(msg.name, msg.position))
@@ -172,7 +172,7 @@ class MotionLog(Node):
         jump = max(abs(a - b) for a, b in zip(q, st["last"]))
         dt = max(now - st["t_last"], 1e-3)
         if jump > math.radians(JUMP_DEG) and math.degrees(jump) / dt > JUMP_DEG_S:
-            # ตัวคุมแขนเพิ่งกลับมา (recal / reconnect) ตัวเลขเปลี่ยนทันที — จดไว้เฉยๆ ไม่นับเป็นการขยับ
+            # arm controller just came back (recal / reconnect), numbers changed instantly — just log it, don't count it as a move
             arm_log.append(arm_log.moves_file(now), {
                 "type": "jump", "ts": round(now, 3), "time": arm_log.local_time(now), "arm": arm,
                 "from": [round(math.degrees(v), 2) for v in st["last"]], "to": [round(math.degrees(v), 2) for v in q]})
@@ -197,16 +197,16 @@ class MotionLog(Node):
                 seg.samples = seg.samples[::2]
         still = now - seg.last_change
         if not seg.moved:
-            # goal ที่ไม่พาแขนไปไหน (สั่งท่าเดิม) — ทิ้งเมื่อตัวคุมจบหรือรอนานแล้ว
+            # goal that takes the arm nowhere (same pose commanded) — drop it once the controller finishes or after a long wait
             if (seg.result and still > STILL_S) or now - seg.t_open > 30.0:
                 st["seg"] = None
             return
         done = seg.goal is None or seg.result
         if (still >= STILL_S and done) or still >= STILL_MAX_S:
-            self.close(arm, now, "นิ่ง")
+            self.close(arm, now, "still")
 
     def poses(self, arm):
-        """ท่าที่สอนไว้ (อ่านไฟล์ใหม่เมื่อไฟล์เปลี่ยน)"""
+        """Taught poses (re-read when the file changes)"""
         import os
         try:
             mtime = os.path.getmtime(programs.DEFAULT_FILE)
@@ -248,13 +248,13 @@ class MotionLog(Node):
             ref = self.loader.reference(arm)
             loads = [self.loader.torque(arm, self.loader.q_of(arm, q)) for _, q in samples]
         except Exception as exc:
-            self.get_logger().warn(f"คำนวณภาระ J1 ไม่ได้: {exc}")
+            self.get_logger().warn(f"Could not calculate J1 load: {exc}")
             return None
         k = max(range(len(loads)), key=lambda i: abs(loads[i]))
         a, b = max(0, k - 1), min(len(samples) - 1, k + 1)
         dt = samples[b][0] - samples[a][0]
         w = (samples[b][1][0] - samples[a][1][0]) / dt if dt > 0 else 0.0
-        lift = None if abs(math.degrees(w)) < 0.5 else bool(loads[k] * w < 0)  # น้ำหนักดึงสวนทางที่ J1 หมุน = ยกขึ้น
+        lift = None if abs(math.degrees(w)) < 0.5 else bool(loads[k] * w < 0)  # weight pulling against J1's rotation = lifting
         pct = [100.0 * abs(v) / ref for v in loads]
         return {"from": round(pct[0], 1), "to": round(pct[-1], 1), "peak": round(pct[k], 1),
                 "peak_at": [round(math.degrees(v), 1) for v in samples[k][1]],
@@ -262,7 +262,7 @@ class MotionLog(Node):
 
 
 def programs_speed_note():
-    """เพดานความเร็ว J1 ที่ตั้งไว้ตอนนั้น (ไว้ดูย้อนหลังว่า log ช่วงไหนใช้เพดานไหน)"""
+    """J1 speed cap in effect at the time (to see later which cap each stretch of the log used)"""
     try:
         import os
 

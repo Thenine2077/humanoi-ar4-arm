@@ -1,5 +1,5 @@
-# MoveIt สั่งแขนผ่าน FollowJointTrajectory ของตัวคุมแต่ละแขน — เขียน YAML ตรงๆ (list ผ่าน Python dict
-# จะกลายเป็น !!python/tuple แล้ว parse ทั้งไฟล์พัง — ดู ar_gz_bringup/config/moveit_controllers.yaml)
+# MoveIt drives the arms through each arm controller's FollowJointTrajectory — written as plain YAML (a list passed through a Python dict
+# becomes !!python/tuple and the whole file fails to parse — see ar_gz_bringup/config/moveit_controllers.yaml)
 /**:
   ros__parameters:
     moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager

@@ -1,15 +1,15 @@
-"""เหมือน ar_moveit_config/launch/ar_moveit.launch.py ของผู้ขายทุกอย่าง (SRDF/kinematics/
-joint_limits ยังโหลดจากไฟล์ของผู้ขายตรงๆ ไม่แก้ไฟล์ผู้ขายเลย) — ต่างกัน 2 จุด ทั้งคู่เป็น
-ปัญหาความเข้ากันได้ Iron→Jazzy ไม่ใช่บั๊กของไฟล์ผู้ขาย:
+"""Same as the vendor's ar_moveit_config/launch/ar_moveit.launch.py in every way (SRDF/kinematics/
+joint_limits are still loaded straight from the vendor files; no vendor file is edited) — 2 differences, both are
+Iron→Jazzy compatibility issues, not bugs in the vendor files:
 
-  1. request_adapters ของ OMPL planning pipeline ต้องเป็น list ของสตริงบน MoveIt2/Jazzy
-     (2.12.4) ไม่ใช่สตริงยาวคั่นด้วยช่องว่างแบบที่ผู้ขายเขียนไว้ (เขียนสำหรับ Iron)
-  2. พารามิเตอร์ที่มี list (request_adapters, controller_names, joints) ต้องมาจากไฟล์ YAML
-     ที่เขียนตรงๆ (config/ompl_planning_pipeline.yaml, config/moveit_controllers.yaml)
-     ไม่ใช่ Python dict ที่ประกอบในโค้ดแล้วส่งให้ launch_ros — เพราะ launch_ros แปลง list
-     เป็น python tuple ก่อน dump เป็นไฟล์ชั่วคราว ได้ tag "!!python/tuple" ที่ parser YAML
-     ของ ROS2 (C) อ่านไม่ออก แล้ว parse "ทั้งไฟล์" พังเงียบๆ — แม้พารามิเตอร์สตริงธรรมดาที่อยู่
-     ไฟล์เดียวกัน (เช่น planning_plugin) ก็หายไปด้วย ทั้งที่ค่าถูกต้อง
+  1. request_adapters of the OMPL planning pipeline must be a list of strings on MoveIt2/Jazzy
+     (2.12.4), not one long space-separated string as the vendor wrote it (written for Iron)
+  2. parameters that contain lists (request_adapters, controller_names, joints) must come from YAML files
+     written directly (config/ompl_planning_pipeline.yaml, config/moveit_controllers.yaml),
+     not a Python dict built in code and handed to launch_ros — because launch_ros turns lists
+     into python tuples before dumping them to a temp file, giving a "!!python/tuple" tag that the ROS2 (C)
+     YAML parser can't read, and then parsing of "the whole file" silently fails — even plain string parameters in
+     the same file (e.g. planning_plugin) are lost too, although their values are correct
 
   ros2 launch ar_gz_bringup ar_moveit_jazzy.launch.py use_sim_time:=true
 """
@@ -41,12 +41,12 @@ def generate_launch_description():
             default_value="false",
             description="Make MoveIt use simulation time.",
         ),
-        # บน PC (WSLg) ปล่อยว่างไว้ — ดูเหตุผลที่ rviz_node ข้างล่าง
-        # บน Pi (จอจริง/Raspberry Pi Connect) ไม่มีปัญหานั้น ใส่ path config ได้เลยจะเปิดมาพร้อม MotionPlanning
+        # On the PC (WSLg) leave it empty — see the reason at rviz_node below
+        # On the Pi (real screen/Raspberry Pi Connect) that problem doesn't exist; give a config path and it opens with MotionPlanning
         DeclareLaunchArgument(
             "rviz_config",
             default_value="",
-            description="ไฟล์ .rviz ที่จะโหลดตอนเปิด ('' = เปิด RViz เปล่า สำหรับ WSLg)",
+            description=".rviz file to load at startup ('' = open an empty RViz, for WSLg)",
         ),
     ]
     rviz_config = LaunchConfiguration("rviz_config")
@@ -82,13 +82,13 @@ def generate_launch_description():
         "robot_description_planning": load_yaml("ar_moveit_config", os.path.join("config", "joint_limits.yaml"))
     }
 
-    # planning_plugin/request_adapters มาจากไฟล์ YAML ที่เขียนตรงๆ (config/ompl_planning_pipeline.yaml)
-    # ไม่ใช่ Python dict — กัน launch_ros แปลง list เป็น !!python/tuple แล้ว parse ทั้งไฟล์พัง
+    # planning_plugin/request_adapters come from a YAML file written directly (config/ompl_planning_pipeline.yaml),
+    # not a Python dict — so launch_ros can't turn lists into !!python/tuple and break parsing of the whole file
     ompl_planning_pipeline_config = PathJoinSubstitution(
         [FindPackageShare("ar_gz_bringup"), "config", "ompl_planning_pipeline.yaml"]
     )
 
-    # เหตุผลเดียวกับ ompl_planning_pipeline_config — controller_names/joints เป็น list
+    # same reason as ompl_planning_pipeline_config — controller_names/joints are lists
     moveit_controllers = PathJoinSubstitution(
         [FindPackageShare("ar_gz_bringup"), "config", "moveit_controllers.yaml"]
     )
@@ -97,10 +97,10 @@ def generate_launch_description():
         "moveit_manage_controllers": False,
         "trajectory_execution.allowed_execution_duration_scaling": 1.2,
         "trajectory_execution.allowed_goal_duration_margin": 0.5,
-        # 0.01 (ค่าเดิม) แคบเกินไปสำหรับ sim นี้ — แค่ความหน่วงเล็กน้อยระหว่าง Plan เสร็จ
-        # กับกด Execute ก็ทำให้ joint เบี่ยงเกิน 0.01 rad จน Execute ถูก reject กลางทาง
-        # แล้ว controller (ที่ไม่ enforce command limit เพราะไฟล์ ros2_control ของผู้ขาย
-        # parse limit ไม่ผ่าน) ทิ้งแขนค้างไว้ที่ hard-stop ของข้อต่อถาวร
+        # 0.01 (the original value) is too tight for this sim — just the small delay between Plan finishing
+        # and pressing Execute makes a joint drift more than 0.01 rad, so Execute is rejected midway,
+        # and then the controller (which doesn't enforce command limits because the vendor's ros2_control file
+        # fails to parse the limits) leaves the arm stuck at the joint's hard stop for good
         "trajectory_execution.allowed_start_tolerance": 0.1,
     }
 
@@ -128,13 +128,13 @@ def generate_launch_description():
         ],
     )
 
-    # เปิด RViz "เปล่า" ตั้งใจไม่ใส่ -d โหลด config ตอนเปิด เพราะ -d ทำให้หน้าต่าง RViz
-    # โชว์ช้า (ต้อง parse config ก่อน) ไปชนจังหวะที่ WSLg ลงทะเบียนรับ input ของหน้าต่าง
-    # พอดี ทำให้เมาส์คลิกอะไรในหน้าต่างไม่ได้เลยถาวร (แม้แต่ minimize) ตลอดอายุหน้าต่างนั้น —
-    # ไม่เกี่ยวกับเนื้อหา config เลย (ทดสอบแล้วว่า config เปล่าๆก็ค้างเหมือนกันถ้าใช้ -d)
-    # วิธีแก้ที่ยืนยันแล้วว่าได้ผล 100%: เปิด RViz เปล่าให้หน้าต่างโชว์/ตอบสนองก่อน
-    # แล้วค่อยโหลด config เอาทีหลังผ่านเมนู File > Open Config เลือกไฟล์
-    # ar_gz_bringup/config/ar_moveit.rviz (จะได้ MotionPlanning panel ครบเหมือนของผู้ขาย)
+    # Open RViz "empty", deliberately without -d loading a config at startup, because -d makes the RViz window
+    # appear late (it parses the config first), colliding with the moment WSLg registers the window for input,
+    # so mouse clicks in the window stop working for good (not even minimize) for the life of that window —
+    # nothing to do with the config contents (tested: even an empty config hangs the same way with -d)
+    # Fix confirmed to work 100%: open an empty RViz so the window appears/responds first,
+    # then load the config afterwards via the menu File > Open Config, choosing the file
+    # ar_gz_bringup/config/ar_moveit.rviz (gives the full MotionPlanning panel like the vendor's)
     rviz_parameters = [
         robot_description,
         robot_description_semantic,
@@ -161,7 +161,7 @@ def generate_launch_description():
         condition=IfCondition(has_rviz_config),
     )
 
-    # หมายเหตุ: ไม่รัน robot_state_publisher ที่นี่ — ตรงกับไฟล์ต้นฉบับของผู้ขาย เพราะ
-    # ar_gz_bringup/ar_gz.launch.py (หรือ ar_hardware_interface ฝั่งแขนจริง) รันของตัวเองอยู่แล้ว
-    # รันซ้ำจะชื่อโหนดชนกัน
+    # Note: robot_state_publisher is not run here — same as the vendor's original file, because
+    # ar_gz_bringup/ar_gz.launch.py (or ar_hardware_interface on the real-arm side) already runs its own;
+    # running it twice would cause a node name clash
     return LaunchDescription(declared_arguments + [rviz_node, rviz_node_with_config, move_group_node])

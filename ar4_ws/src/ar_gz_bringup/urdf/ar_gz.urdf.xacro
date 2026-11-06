@@ -17,21 +17,21 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:ar_robot>
 
-  <!-- เขียน <ros2_control> เองแทนการเรียก xacro:ar_ros2_control ของผู้ขาย เพราะไฟล์
-       ar.ros2_control.xacro มี 2 จุดที่ใช้กับ sim ไม่ได้ (อ่านอย่างเดียว ไม่แก้ไฟล์นั้น):
-       1) limit เขียนเป็น "{-170*pi/180}" ขาด "$" นำหน้า (ต้อง "${...}" ถึงจะให้ xacro
-          คำนวณ) เลยหลุดเป็นข้อความดิบที่ gz_ros2_control parse เป็นตัวเลขไม่ได้ (log:
-          "Error parsing the limits...Skipping it") — ด้านล่างนี้คำนวณเป็นเรเดียนตรงๆแล้ว
-       2) ไม่ได้ตั้ง position_proportional_gain เลย ทำให้ gz_ros2_control ใช้ default 0.1
-          ซึ่งอ่อนเกินไปต้านแรงโน้มถ่วง แขนเลยค่อยๆห้อยลงจนสุด hard-stop ภายในไม่กี่สิบวินาที
-          (คือสาเหตุจริงที่ CheckStartStateBounds ติด joint_3/joint_5 ซ้ำๆ) -->
+  <!-- Write <ros2_control> here instead of calling the vendor's xacro:ar_ros2_control, because
+       ar.ros2_control.xacro has 2 things that don't work in sim (read only, that file is not edited):
+       1) limits are written as "{-170*pi/180}" without the leading "$" (needs "${...}" for xacro
+          to evaluate it), so it stays raw text that gz_ros2_control can't parse as a number (log:
+          "Error parsing the limits...Skipping it") — below they are computed directly in radians
+       2) position_proportional_gain is not set at all, so gz_ros2_control uses the default 0.1,
+          which is too weak to hold against gravity; the arm slowly sags to its hard stop within a few tens of seconds
+          (the real reason CheckStartStateBounds kept failing on joint_3/joint_5) -->
   <ros2_control name="$(arg name)" type="system">
     <hardware>
       <plugin>gz_ros2_control/GazeboSimSystem</plugin>
       <param name="serial_port">None</param>
       <param name="calibrate">False</param>
-      <!-- gz_ros2_control อ่าน gain นี้จากระดับ <hardware> (ไม่ใช่ราย joint) แล้วใช้
-           คำนวณ velocity command = gain * (target - actual) ค่า default 0.1 ช้าเกินไป -->
+      <!-- gz_ros2_control reads this gain at the <hardware> level (not per joint) and uses it
+           to compute velocity command = gain * (target - actual); the default 0.1 is too slow -->
       <param name="position_proportional_gain">20.0</param>
     </hardware>
     <joint name="joint_1">
@@ -49,9 +49,9 @@
         <param name="max">1.570796</param>
       </command_interface>
       <state_interface name="position">
-        <!-- ตั้งให้ตรงกับ "ท่าพัก" จริงของแขนหลัง calibrate (วัดได้ -5.84 องศา = -0.1019 rad
-             จาก log ของ ar_hardware_interface 2026-09-17) เพื่อให้ซิมกับแขนจริงเริ่มที่ท่า
-             เดียวกัน — ไม่งั้นตอนเปิด mirror แขนจริงจะถูกสั่งวิ่งไป 0 องศาทันทีแบบกระชาก -->
+        <!-- Set to match the real arm's actual "rest pose" after calibrate (measured -5.84 degrees = -0.1019 rad
+             from the ar_hardware_interface log, 2026-09-17) so the sim and the real arm start in the same
+             pose — otherwise, when mirroring starts, the real arm is told to jump to 0 degrees at once -->
         <param name="initial_value">-0.1019</param>
       </state_interface>
     </joint>
@@ -79,7 +79,7 @@
         <param name="max">1.832596</param>
       </command_interface>
       <state_interface name="position">
-        <!-- ท่าพักจริงของแขนหลัง calibrate = -52.16 องศา = -0.9103 rad (เหตุผลเดียวกับ joint_2) -->
+        <!-- The real arm's rest pose after calibrate = -52.16 degrees = -0.9103 rad (same reason as joint_2) -->
         <param name="initial_value">-0.9103</param>
       </state_interface>
     </joint>

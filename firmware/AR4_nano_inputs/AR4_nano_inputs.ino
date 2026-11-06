@@ -1,17 +1,17 @@
-// ===== AR4_nano_inputs — สำเนาของ AR4_nano_sketch.ino ที่เปิดขา input D3-D7 =====
-// ต่างจากต้นฉบับแค่: เปิดบรรทัด const Input4-7 และ pinMode(Input3-7, INPUT_PULLUP)
-// ที่ผู้ขายคอมเมนต์ปิดไว้ (ต้นฉบับไม่ได้ถูกแก้)
-// ขา D3-D7 อ่านได้ HIGH ตอนว่าง (pull-up) และ LOW เมื่อหน้าสัมผัสรีเลย์/สวิตช์ต่อลง GND
-//   -> ใน HMI ใช้ "Wait Input Off = 3" เพื่อรอให้รีเลย์ "เปิด"
-// D2 = เซอร์โวกริปเปอร์ (ไม่ใช้เป็น input), D14-D19 (A0-A5) = output ไปโมดูลรีเลย์
+// ===== AR4_nano_inputs — copy of AR4_nano_sketch.ino with input pins D3-D7 enabled =====
+// Only differences from the original: the const Input4-7 lines and pinMode(Input3-7, INPUT_PULLUP)
+// that the vendor had commented out are enabled (the original is untouched)
+// Pins D3-D7 read HIGH when idle (pull-up) and LOW when a relay contact/switch connects them to GND
+//   -> in the HMI use "Wait Input Off = 3" to wait for the relay to turn "on"
+// D2 = gripper servo (not used as an input), D14-D19 (A0-A5) = outputs to the relay module
 //
-// v2: โมดูลรีเลย์ 8 ช่องในกล่องเป็นแบบ active-LOW (ขา LOW = รีเลย์ติด) ยืนยันกับของจริงแล้ว
-//     (รีเลย์ช่อง 3-8 ต่อกับ D14-D19, ช่อง 1-2 ไม่ได้ต่อ) ต้นฉบับจึงมีปัญหา 2 ข้อ:
-//       - ขาเป็น LOW ตอนบูต -> รีเลย์ทั้ง 6 ช่อง "ติดเอง" ทันทีที่เปิดเครื่อง
-//       - ปุ่ม 打开IO (ON) ทำให้รีเลย์ "ดับ" กลับด้านกับชื่อปุ่ม
-//     แก้: ตั้งขา 14-19 เป็น HIGH ตั้งแต่บูต (รีเลย์ดับ) และกลับตรรกะ ON/OF เฉพาะขา 14-19
-//     -> 打开IO = รีเลย์ติด, 关闭IO = รีเลย์ดับ, ไฟดับ/Nano รีเซ็ต = รีเลย์ดับเสมอ
-//     ขาอื่นทำงานเหมือนต้นฉบับ (กัน ONX3 ไปปิด pull-up ของขา input)
+// v2: the 8-channel relay module in the box is active-LOW (pin LOW = relay on), confirmed on the real hardware
+//     (relay channels 3-8 wired to D14-D19, channels 1-2 not wired), so the original had 2 problems:
+//       - the pins are LOW at boot -> all 6 relays "switch on by themselves" as soon as power comes on
+//       - the 打开IO (ON) button turns the relay "off" — the opposite of the button name
+//     Fix: set pins 14-19 HIGH from boot (relays off) and invert the ON/OF logic for pins 14-19 only
+//     -> 打开IO = relay on, 关闭IO = relay off, power loss/Nano reset = relay always off
+//     Other pins work as in the original (so ONX3 can't disable an input pin's pull-up)
 
 
 #include <Servo.h>
@@ -46,7 +46,7 @@ const int Output18 = 18;
 const int Output19 = 19;
 
 
-// v2: ขาที่ต่อกับโมดูลรีเลย์ (active-LOW)
+// v2: pins wired to the relay module (active-LOW)
 bool isRelayPin(int pin) {
   return pin >= Output14 && pin <= Output19;
 }
@@ -73,8 +73,8 @@ void setup() {
   pinMode(Input7, INPUT_PULLUP);
 
 
-  // v2: เขียน HIGH "ก่อน" สลับเป็น OUTPUT — ขาจะออก HIGH ทันทีที่เป็น output
-  // ไม่มีช่วง LOW แวบเดียวที่ทำให้รีเลย์ (active-LOW) กระตุกตอนบูต
+  // v2: write HIGH "before" switching to OUTPUT — the pin outputs HIGH the moment it becomes an output
+  // with no brief LOW blip that would make the (active-LOW) relays twitch at boot
   for (int p = Output14; p <= Output19; p++) {
     digitalWrite(p, HIGH);
     pinMode(p, OUTPUT);

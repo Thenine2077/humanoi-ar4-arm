@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
-<!-- Humanoi: แขน AR4 สองตัว (ซ้าย/ขวา) ติดสองข้างเสากลาง + เสา หัว กล้อง มือ — สำหรับระบบแขนจริง (ไม่มีฐานล้อ)
-  เรขาคณิตทั้งหมดอยู่ใน humanoi_upper.xacro (ใช้ร่วมกับหุ่นเต็มตัวใน Gazebo) — แก้ขนาดที่นั่น
+<!-- Humanoi: two AR4 arms (left/right) on both sides of the center pole + pole, head, camera, hands — for the real arm system (no wheeled base)
+  All geometry is in humanoi_upper.xacro (shared with the full robot in Gazebo) — change dimensions there
 
-  ฮาร์ดแวร์แต่ละแขน: left_hw / right_hw = real (Teensy ผ่านไดรเวอร์ของผู้ขาย) หรือ mock (จำลอง ไม่ต่อบอร์ด)
-  calibrate ไม่ทำใน ROS (ไดรเวอร์ผู้ขายบล็อก ~2 นาที/แขน และ USB มักหลุดระหว่างนั้น) — ใช้ scripts/ar_calibrate.py
+  Hardware per arm: left_hw / right_hw = real (Teensy via the vendor driver) or mock (simulated, no board)
+  calibrate is not done in ROS (the vendor driver blocks ~2 min/arm and USB often drops meanwhile) — use scripts/ar_calibrate.py
 -->
 <robot xmlns:xacro="http://wiki.ros.org/xacro" name="humanoi_arms">
   <xacro:arg name="left_port" default="/dev/serial/by-path/platform-xhci-hcd.0-usb-0:1:1.0"/>

@@ -1,6 +1,6 @@
-# ตัวคุมสองแขน — ค่าต่อแขนเหมือน ar_hardware_interface/config/controllers.yaml ของผู้ขาย (แค่เติม left_/right_)
-# update_rate 50 Hz (ผู้ขายใช้ 125 กับแขนเดียว): ทุกรอบไดรเวอร์คุย Teensy แบบรอคำตอบ 2 ครั้งต่อแขน
-# สองแขนเรียงกันใน loop เดียว ~6-8 ms — 125 Hz (8 ms) ไม่พอ
+# Controllers for both arms — per-arm values same as the vendor's ar_hardware_interface/config/controllers.yaml (just adds left_/right_)
+# update_rate 50 Hz (vendor uses 125 with one arm): every cycle the driver talks to the Teensy with 2 blocking request/replies per arm,
+# both arms in sequence in one loop ~6-8 ms — 125 Hz (8 ms) is not enough
 controller_manager:
   ros__parameters:
     update_rate: 50

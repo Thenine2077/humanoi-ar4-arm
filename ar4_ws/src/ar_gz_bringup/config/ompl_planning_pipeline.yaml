@@ -1,19 +1,19 @@
-# เขียนเป็นไฟล์ YAML ตรงๆ (ไม่ผ่าน Python dict->launch_ros->yaml.dump, กัน !!python/tuple)
+# Written as a plain YAML file (not via Python dict->launch_ros->yaml.dump, to avoid !!python/tuple)
 #
-# โครงสร้างนี้ตรวจสอบจาก source จริงของ moveit_configs_utils (ros-jazzy-moveit-configs-utils
-# 2.12.4, ติดตั้งแล้วอ่านโค้ด moveit_configs_builder.py โดยตรง) ไม่ใช่การเดา — พารามิเตอร์
-# ของ pipeline เปลี่ยนชื่อ/โครงสร้างระหว่าง ROS 2 Iron (ที่ไฟล์ผู้ขายเขียนไว้) กับเวอร์ชันนี้:
-#   - "planning_plugin" (เอกพจน์, string) -> "planning_plugins" (พหูพจน์, list) แล้วนี่คือ
-#     สาเหตุจริงที่ move_group รายงาน "Planning plugin name is empty or not defined" —
-#     ไม่ใช่เรื่อง namespace/prefix เลย เป็นเรื่องชื่อคีย์เปลี่ยนไปตรงๆ
-#   - request_adapters plugin class เปลี่ยนจาก default_planner_request_adapters/*
-#     เป็น default_planning_request_adapters/*
-#   - เพิ่ม response_adapters (ของใหม่ แยกจาก request_adapters)
-#   - พารามิเตอร์ทั้งหมดของ pipeline ต้องอยู่ใต้คีย์ชื่อ "ompl" (ชื่อ pipeline) ไม่ใช่ "move_group"
+# This structure was verified against the actual moveit_configs_utils source (ros-jazzy-moveit-configs-utils
+# 2.12.4, installed and read moveit_configs_builder.py directly), not guessed — the pipeline
+# parameters changed name/structure between ROS 2 Iron (what the vendor file was written for) and this version:
+#   - "planning_plugin" (singular, string) -> "planning_plugins" (plural, list), and this is
+#     the real reason move_group reports "Planning plugin name is empty or not defined" —
+#     not a namespace/prefix issue at all, the key name simply changed
+#   - request_adapters plugin class changed from default_planner_request_adapters/*
+#     to default_planning_request_adapters/*
+#   - response_adapters added (new, separate from request_adapters)
+#   - all pipeline parameters must be under the key "ompl" (the pipeline name), not "move_group"
 #
-# planner_configs/ar_manipulator ด้านล่าง = คัดลอกค่ามาจาก ar_moveit_config/config/ompl_planning.yaml
-# ของผู้ขาย (อ่านอย่างเดียว ไม่ได้แก้ไฟล์นั้น) เพราะไฟล์ต้นฉบับไม่มี planning_plugins/
-# request_adapters/response_adapters เลย (เขียนไว้ก่อนที่ MoveIt เวอร์ชันนี้จะต้องใช้คีย์พวกนี้)
+# planner_configs/ar_manipulator below = values copied from the vendor's ar_moveit_config/config/ompl_planning.yaml
+# (read only, that file is not edited) because the original file has no planning_plugins/
+# request_adapters/response_adapters at all (written before this MoveIt version required these keys)
 /**:
   ros__parameters:
     planning_pipelines:

@@ -1,39 +1,39 @@
 #!/usr/bin/env python3
-"""สะพาน serial <-> TCP ฝั่ง Windows สำหรับข้าม usbip
+"""Windows-side serial <-> TCP bridge to get around usbip
 
-ทำไมต้องมี
+Background
 ----------
-usbip ทำงานได้แต่ช้าและไม่ทน: ar_hardware_interface ยิง serial round-trip แบบ blocking
-สองครั้งต่อรอบ control loop (read -> "JP\\n" รอคำตอบ, write -> "MT...\\n" รอคำตอบ)
-ผ่าน usbip วัดได้ 25 ms + 43 ms ต่อรอบ ทั้งที่แขนยังไม่ขยับ แล้วหลุดภายใน ~1 นาที
-เทียบกับเปิด COM ตรงบน Windows ที่วัดได้ 1.9 ms ต่อรอบ (ดู test_com_direct.py --mt)
+usbip works but is slow and fragile: ar_hardware_interface does a blocking serial round-trip
+twice per control loop cycle (read -> "JP\\n" and wait for the reply, write -> "MT...\\n" and wait for the reply)
+over usbip that measured 25 ms + 43 ms per cycle with the arm not even moving, and it dropped within ~1 minute
+compared with 1.9 ms per cycle when opening the COM port directly on Windows (see test_com_direct.py --mt)
 
-สะพานนี้เลี่ยง usbip ทั้งหมด: Windows เปิด COM port ตรงๆ (ไม่มี USB forwarding)
-แล้ว stream ไบต์ดิบผ่าน TCP ให้ WSL ฝั่ง WSL ใช้ socat ทำ pty ปลอมขึ้นมา
-ROS จึงเห็นเป็น /dev/ttyV0 ธรรมดา ไม่ต้องแก้โค้ดผู้ขายเลยแม้แต่บรรทัดเดียว
+This bridge avoids usbip entirely: Windows opens the COM port directly (no USB forwarding)
+and streams the raw bytes over TCP to WSL; on the WSL side socat creates a fake pty
+so ROS sees a plain /dev/ttyV0 — not a single line of the vendor code needs changing
 
-⚠️ ออกแบบเป็น "เธรดเดียว" โดยตั้งใจ — ห้ามแยกเธรดอ่าน/เธรดเขียน
-   pyserial ไม่ thread-safe: เวอร์ชันแรกของไฟล์นี้แยกเป็น 2 เธรด (serial->tcp และ
-   tcp->serial) พอ ROS เริ่มส่งข้อมูลจริง เธรดหนึ่งค้างอยู่ใน ser.read() ขณะอีกเธรด
-   เรียก ser.write() พร้อมกัน แล้วพังด้วย
+⚠️ Single-threaded on purpose — do not split it into a reader thread and a writer thread
+   pyserial is not thread-safe: the first version of this file used 2 threads (serial->tcp and
+   tcp->serial); once ROS started sending real traffic, one thread was blocked in ser.read() while the other
+   called ser.write() at the same time, and it crashed with
        ClearCommError failed (PermissionError(13, 'The device does not recognize
        the command.', winerror 22 = ERROR_BAD_COMMAND))
-   ตามด้วย COM หายไปจาก Windows ทั้งพอร์ต (FileNotFoundError ตอนเปิดใหม่)
-   ซึ่ง "หน้าตาเหมือนอุปกรณ์ถูกถอด" มาก จนหลงคิดว่าเป็นที่บอร์ดอยู่นาน
-   พิสูจน์แล้วว่าไม่ใช่: test_com_direct.py --mt --hz 30 (เธรดเดียว เปิด COM ตรง)
-   วิ่งได้ 3572 รอบ × 2 ครั้ง ไม่พลาดเลยสักรอบ ด้วย traffic แบบเดียวกันเป๊ะ
+   followed by the COM port vanishing from Windows entirely (FileNotFoundError on reopen),
+   which "looks exactly like the device was unplugged", so for a long time we wrongly suspected the board
+   Proven otherwise: test_com_direct.py --mt --hz 30 (single thread, direct COM)
+   ran 3572 cycles × 2 without a single miss, using exactly the same traffic
 
-วิธีใช้
+Usage
 -------
-  ฝั่ง Windows (PowerShell ธรรมดา ไม่ต้อง admin):
+  Windows side (plain PowerShell, no admin needed):
       pip install pyserial
       python C:\\Users\\User\\Desktop\\ar4\\tools\\serial_bridge_win.py --port COM9
 
-  ฝั่ง WSL (อีกหน้าต่าง):
+  WSL side (another terminal window):
       bash /mnt/c/Users/User/Desktop/ar4/tools/serial_bridge_wsl.sh
-      # -> สร้าง /dev/ttyV0 ให้ แล้วสั่ง ROS ด้วย serial_port:=/dev/ttyV0
+      # -> creates /dev/ttyV0; then launch ROS with serial_port:=/dev/ttyV0
 
-หมายเหตุ: ถ้า WSL ต่อไม่ติด มักติดที่ Windows Firewall — เปิดพอร์ตด้วย (PowerShell admin):
+Note: if WSL can't connect, it's usually the Windows Firewall — open the port with (PowerShell as admin):
   New-NetFirewallRule -DisplayName "AR4 serial bridge" -Direction Inbound `
       -LocalPort 5555 -Protocol TCP -Action Allow
 """
@@ -46,26 +46,26 @@ import time
 try:
     import serial  # pyserial
 except ImportError:
-    sys.exit("ไม่พบ pyserial — ติดตั้งด้วย:  pip install pyserial")
+    sys.exit("pyserial not found — install it with:  pip install pyserial")
 
 
 def serve_client(conn, addr, ser, idle_s):
-    """ส่งไบต์สองทางด้วยเธรดเดียว คืน True ถ้า serial ยังใช้ได้อยู่
+    """Pass bytes both ways on a single thread. Returns True if the serial port is still usable
 
-    เช็ค socket ด้วย select แบบ timeout=0 (poll ล้วน ไม่รอ) แล้วเช็ค ser.in_waiting
-    ทั้งการอ่านและการเขียน serial จึงเกิดในเธรดนี้เธรดเดียวเสมอ ไม่มีทางซ้อนกัน
+    Polls the socket with select timeout=0 (pure poll, no waiting), then checks ser.in_waiting,
+    so serial reads and writes always happen on this one thread and can never overlap
 
-    ทำไมต้อง timeout=0 + time.sleep แทนที่จะให้ select รอเอง:
-    Windows มี timer granularity ~15.6 ms การสั่ง select ให้รอ 1 ms จึงถูกปัดขึ้นเป็น
-    สิบกว่า ms ทุกครั้ง วัดจริงได้ 23.6 ms ต่อรอบ (เทียบกับ 1.9 ms ตอนเปิด COM ตรง)
-    ส่วน time.sleep() ของ Python 3.11+ บน Windows ใช้ high-resolution waitable timer
-    จึงหลับได้ละเอียดระดับต่ำกว่ามิลลิวินาทีจริง
-    และถ้ารอบไหน "มีงานทำ" จะไม่หลับเลย เพื่อให้เก็บไบต์ที่เหลือของ message ต่อทันที
+    Why timeout=0 + time.sleep instead of letting select do the waiting:
+    Windows timer granularity is ~15.6 ms, so asking select to wait 1 ms gets rounded up to
+    over ten ms every time; measured 23.6 ms per cycle (vs 1.9 ms with the COM port opened directly)
+    whereas time.sleep() in Python 3.11+ on Windows uses a high-resolution waitable timer
+    so it really can sleep with sub-millisecond resolution
+    and a cycle that "had work to do" doesn't sleep at all, so the rest of a message's bytes are picked up immediately
     """
-    print(f"[bridge] WSL ต่อเข้ามาจาก {addr}")
+    print(f"[bridge] WSL connected from {addr}")
     conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
-    # ทิ้งข้อมูลค้างท่อจาก session ก่อนหน้า ไม่งั้น driver จะ parse เจอเศษ message เก่า
+    # drop data left in the pipe from the previous session, or the driver will parse fragments of old messages
     ser.reset_input_buffer()
     ser.reset_output_buffer()
 
@@ -80,7 +80,7 @@ def serve_client(conn, addr, ser, idle_s):
             if readable:
                 data = conn.recv(4096)
                 if not data:
-                    print(f"[bridge] {addr} ปิดการเชื่อมต่อ")
+                    print(f"[bridge] {addr} closed the connection")
                     closed = True
                 else:
                     ser.write(data)
@@ -95,22 +95,22 @@ def serve_client(conn, addr, ser, idle_s):
             if not busy and not closed:
                 time.sleep(idle_s)
     except OSError as exc:
-        # แยกให้ออกว่าใครพัง: ถ้า COM ยังเปิดอยู่ได้แปลว่าเป็นฝั่ง TCP (client หลุดเฉยๆ)
+        # tell which side failed: if the COM port is still alive, it was the TCP side (the client just dropped)
         serial_ok = ser.is_open and _serial_alive(ser)
         who = "serial" if not serial_ok else "TCP"
-        print(f"[bridge] {addr} จบการทำงาน ({who}): {exc}")
+        print(f"[bridge] {addr} session ended ({who}): {exc}")
     finally:
         try:
             conn.close()
         except OSError:
             pass
 
-    print("[bridge] รอ client ใหม่")
+    print("[bridge] waiting for a new client")
     return serial_ok
 
 
 def _serial_alive(ser):
-    """เช็คว่า COM ยังตอบ IOCTL อยู่ไหม (in_waiting เรียก ClearCommError ข้างใน)"""
+    """Check whether the COM port still answers IOCTLs (in_waiting calls ClearCommError internally)"""
     try:
         ser.in_waiting
         return True
@@ -120,24 +120,24 @@ def _serial_alive(ser):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--port", default="COM9", help="COM port ของ Teensy (ดูใน Device Manager)")
+    ap.add_argument("--port", default="COM9", help="Teensy COM port (see Device Manager)")
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--listen", default="0.0.0.0")
     ap.add_argument("--tcp-port", type=int, default=5555)
     ap.add_argument("--idle-us", type=float, default=200.0,
-                    help="หลับกี่ไมโครวินาทีตอนไม่มีข้อมูล (ยิ่งน้อยยิ่งหน่วงต่ำ แลกกับ CPU)")
+                    help="microseconds to sleep when there is no data (lower = less latency, more CPU)")
     args = ap.parse_args()
 
     def open_serial():
-        """เปิด COM port วนรอจนกว่าจะได้ (เผื่อ Teensy ถูกถอด/reboot กลางทาง)"""
+        """Open the COM port, retrying until it works (in case the Teensy is unplugged/rebooted mid-way)"""
         while True:
             try:
-                # timeout=0 -> read() ไม่บล็อกเลย เราอ่านเฉพาะจำนวนที่ in_waiting บอกอยู่แล้ว
+                # timeout=0 -> read() never blocks; we only read the byte count in_waiting already reported
                 s = serial.Serial(args.port, args.baud, timeout=0, write_timeout=2.0)
-                print(f"[bridge] เปิด {args.port} @ {args.baud} แล้ว")
+                print(f"[bridge] opened {args.port} @ {args.baud}")
                 return s
             except OSError as exc:
-                print(f"[bridge] เปิด {args.port} ไม่ได้ ({exc}) — ลองใหม่ใน 2 วิ")
+                print(f"[bridge] can't open {args.port} ({exc}) — retrying in 2 s")
                 time.sleep(2.0)
 
     ser = open_serial()
@@ -146,21 +146,21 @@ def main():
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((args.listen, args.tcp_port))
     srv.listen(1)
-    print(f"[bridge] ฟังอยู่ที่ {args.listen}:{args.tcp_port} — รอ WSL ต่อเข้ามา (Ctrl-C เพื่อออก)")
+    print(f"[bridge] listening on {args.listen}:{args.tcp_port} — waiting for WSL to connect (Ctrl-C to quit)")
 
     idle_s = args.idle_us / 1_000_000.0
     try:
         while True:
             conn, addr = srv.accept()
             if not serve_client(conn, addr, ser, idle_s):
-                print("[bridge] serial มีปัญหา — ปิดแล้วเปิด COM ใหม่")
+                print("[bridge] serial problem — closing and reopening the COM port")
                 try:
                     ser.close()
                 except OSError:
                     pass
                 ser = open_serial()
     except KeyboardInterrupt:
-        print("\n[bridge] ปิดตามคำสั่ง")
+        print("\n[bridge] stopped by user")
     finally:
         srv.close()
         try:

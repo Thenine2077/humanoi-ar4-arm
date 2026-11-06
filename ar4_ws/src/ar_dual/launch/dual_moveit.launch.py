@@ -1,11 +1,11 @@
-"""MoveIt + RViz สำหรับแขน AR4 สองตัว (หน้าต่างเดียว เห็นทั้งสองแขน + เสา) — เปิดหลัง dual_hardware.launch.py
+"""MoveIt + RViz for both AR4 arms (one window showing both arms + the pole) — start after dual_hardware.launch.py
 
-  ros2 launch ar_dual dual_moveit.launch.py      # (arm moveit เรียกตัวนี้ พร้อมไฟล์ RViz config)
+  ros2 launch ar_dual dual_moveit.launch.py      # (arm moveit calls this, with the RViz config file)
 
-ใน RViz: ช่อง Planning Group เลือก left_arm / right_arm / both_arms -> ลากลูกบอลปลายแขน หรือแท็บ Joints
--> Plan (เช็กการชนแขนกับแขน และแขนกับเสา/หัว/กล้องให้) -> Execute
-โครงเหมือน ar_gz_bringup/launch/ar_moveit_jazzy.launch.py (แขนเดียว) — พารามิเตอร์ที่เป็น list มาจากไฟล์
-YAML ตรงๆ เพื่อกัน launch_ros แปลงเป็น !!python/tuple (ดูคำอธิบายในไฟล์นั้น)
+In RViz: pick left_arm / right_arm / both_arms in Planning Group -> drag the end-effector ball, or use the Joints tab
+-> Plan (checks arm-arm and arm-pole/head/camera collisions) -> Execute
+Same layout as ar_gz_bringup/launch/ar_moveit_jazzy.launch.py (single arm) — list parameters come straight from
+YAML files to stop launch_ros converting them to !!python/tuple (see the explanation in that file)
 """
 import os
 
@@ -27,13 +27,13 @@ def share(*parts):
 
 def generate_launch_description():
     rviz_config = LaunchConfiguration("rviz_config")
-    # none (หรือว่าง) = เปิด RViz เปล่า — บน PC (WSLg) ห้ามใช้ -d ไม่งั้นเมาส์คลิกในหน้าต่างไม่ได้
-    # (ดู ar_gz_bringup/launch/ar_moveit_jazzy.launch.py) แล้วค่อยโหลด config ผ่าน File > Open Config
+    # none (or empty) = open a blank RViz — on the PC (WSLg) -d must not be used, otherwise mouse clicks in the window don't work
+    # (see ar_gz_bringup/launch/ar_moveit_jazzy.launch.py); load the config afterwards via File > Open Config
     has_rviz_config = PythonExpression(["'", rviz_config, "' not in ('', 'none')"])
 
     robot_description = {"robot_description": ParameterValue(Command([
         PathJoinSubstitution([FindExecutable(name="xacro")]), " ", share("urdf", "humanoi_arms.urdf.xacro"),
-        " left_hw:=mock right_hw:=mock"]), value_type=str)}   # MoveIt ใช้แค่รูปทรง ไม่สนส่วน ros2_control
+        " left_hw:=mock right_hw:=mock"]), value_type=str)}   # MoveIt only needs the geometry, ignores the ros2_control part
     with open(share("srdf", "humanoi_arms.srdf"), encoding="utf-8") as f:
         robot_description_semantic = {"robot_description_semantic": f.read()}
     kinematics = share("config", "kinematics.yaml")
@@ -67,6 +67,6 @@ def generate_launch_description():
                             condition=IfCondition(has_rviz_config))
     return LaunchDescription([
         DeclareLaunchArgument("rviz_config", default_value=share("config", "dual_moveit.rviz"),
-                              description="ไฟล์ .rviz (none = RViz เปล่า สำหรับ WSLg ที่ห้ามใช้ -d)"),
+                              description=".rviz file (none = blank RViz, for WSLg where -d must not be used)"),
         rviz, rviz_with_config, move_group,
     ])

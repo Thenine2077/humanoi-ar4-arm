@@ -1,23 +1,23 @@
-"""ภาระน้ำหนักแขนที่ข้อ 1 (J1) — แรงบิดจากน้ำหนักทุกชิ้นที่หมุนตาม J1 รอบแกน J1 เทียบกับตอน calibrate
+"""Arm weight load at joint 1 (J1) — gravity torque about the J1 axis from every part that turns with J1, compared with calibration
 
-แขนติดด้านข้างลำตัว แกน J1 นอนขนานพื้น J1 จึงต้องยกน้ำหนักทั้งแขน (+ มือ) เหมือนยกตุ้ม ยิ่งแขนยื่นห่างแกนยิ่งหนัก
-สายพาน J1 เคยรูดตอนแขนยื่นไกล ส่วนตอน calibrate (ข้ออื่นอยู่ท่าพัก แขนชี้ออกด้านข้างตามแนวแกน J1)
-J1 หมุนผ่านแนวนอนได้ไม่เคยรูด -> ใช้ภาระสูงสุดตอนนั้นเป็น 100%
+The arms hang on the sides of the torso with the J1 axis horizontal, so J1 lifts the whole arm (+ hand) like a weight: the further the arm reaches from the axis, the heavier
+The J1 belt has slipped with the arm reaching far out, while during calibration (other joints at the rest pose, arm pointing sideways along the J1 axis)
+J1 swings through horizontal and has never slipped -> the peak load there is used as 100%
 
-  ภาระ % = |แรงบิดที่ท่านั้น| / แรงบิดสูงสุดตอน J1 กวาดทั้งช่วงโดยข้อ 2-6 = 0 × 100
-  เกิน 100% = หนักกว่าที่เคยพิสูจน์แล้วว่าไม่รูด
+  load % = |torque at that pose| / peak torque while J1 sweeps its full range with joints 2-6 = 0 × 100
+  over 100% = heavier than what has been proven not to slip
 
-มวลมาจาก URDF (ar_arm.xacro = ค่าของ AR3 + มือ 0.4 kg) น้ำหนักจริงไม่ตรง จึงเชื่อได้แค่เปอร์เซ็นต์เทียบกัน
-ไม่ใช่ N·m — ถ้าชิ้นไหนหนักกว่าในโมเดลมาก (เช่นมอเตอร์ข้อ 4-6) ตัวเลขจะเพี้ยนไปทางนั้น
-ไม่ใช้ ROS (แค่อ่าน URDF) — urdf_text() เอา URDF จากหัวข้อ /robot_description หรือ xacro ของ ar_dual
+Masses come from the URDF (ar_arm.xacro = AR3 values + 0.4 kg hand); real weights differ, so only relative percentages can be trusted,
+not N·m — if a part is much heavier than in the model (e.g. the joint 4-6 motors) the numbers skew that way
+No ROS needed (only reads the URDF) — urdf_text() gets the URDF from the /robot_description topic or the ar_dual xacro
 """
 import math
 import xml.etree.ElementTree as ET
 
 import numpy as np
 
-G = np.array([0.0, 0.0, -9.81])  # ในเฟรม torso (z ขึ้น)
-SWEEP_STEPS = 72  # J1 ทั้งช่วง ~340° ทีละ ~5° (ยอดคลื่นคลาดไม่ถึง 0.1%)
+G = np.array([0.0, 0.0, -9.81])  # in the torso frame (z up)
+SWEEP_STEPS = 72  # full J1 range ~340° in ~5° steps (peak off by less than 0.1%)
 
 
 def _rpy(r, p, y):
@@ -78,7 +78,7 @@ class J1Load:
         return out
 
     def _masses(self, arm):
-        """[(link, kg, จุดศูนย์ถ่วงในเฟรม link)] ของชิ้นที่หมุนตาม J1 — link_1..6 + มือ (ไม่รวมฐานแขน)"""
+        """[(link, kg, centre of mass in the link frame)] of the parts that turn with J1 — link_1..6 + hand (not the arm base)"""
         if arm not in self._mass:
             res = []
             for name, lk in self.links.items():
@@ -92,9 +92,9 @@ class J1Load:
         return self._mass[arm]
 
     def torque(self, arm, q):
-        """แรงบิดจากน้ำหนักรอบแกน J1 (N·m ตามมวลใน URDF มีเครื่องหมาย: + = ดึงให้ J1 หมุนทางบวก)
+        """Gravity torque about the J1 axis (N·m from the URDF masses, signed: + = pulls J1 in the positive direction)
 
-        q = {ชื่อข้อต่อ: rad} (ข้อที่ไม่ใส่ = 0)"""
+        q = {joint name: rad} (joints left out = 0)"""
         W = self._world(q)
         j1 = self.joints[f"{arm}_joint_1"]
         Tj = W[j1.find("parent").get("link")] @ _origin(j1)
@@ -116,7 +116,7 @@ class J1Load:
         return peak
 
     def reference(self, arm):
-        """แรงบิดสูงสุดตอน calibrate = J1 กวาดทั้งช่วง ข้อ 2-6 อยู่ 0 (100%)"""
+        """Peak torque during calibration = J1 sweeps its full range with joints 2-6 at 0 (100%)"""
         if arm not in self._ref:
             self._ref[arm] = self._sweep_peak(arm, [0.0] * 5)
         return self._ref[arm]
@@ -125,16 +125,16 @@ class J1Load:
         return {f"{arm}_joint_{k + 1}": v for k, v in enumerate(values)}
 
     def percent(self, arm, values):
-        """ภาระที่ท่านี้ (values = J1..J6 rad) เป็น % ของตอน calibrate"""
+        """Load at this pose (values = J1..J6 rad) as % of calibration"""
         return 100.0 * abs(self.torque(arm, self.q_of(arm, values))) / self.reference(arm)
 
     def sweep_percent(self, arm, values):
-        """ถ้า J1 หมุนทั้งช่วงโดยแขนคงรูปร่างนี้ (ข้อ 2-6 ตาม values) ภาระสูงสุดกี่ %"""
+        """If J1 turned through its full range with the arm held in this shape (joints 2-6 from values), the peak load in %"""
         return 100.0 * self._sweep_peak(arm, list(values[1:6])) / self.reference(arm)
 
 
 def urdf_text(node=None, timeout=2.0):
-    """URDF ของหุ่น: หัวข้อ /robot_description (ถ้าส่ง node และระบบแขนเปิดอยู่) ไม่งั้นรัน xacro ของ ar_dual"""
+    """The robot URDF: the /robot_description topic (if node is given and the arm system is on), otherwise run the ar_dual xacro"""
     if node is not None:
         import rclpy
         from rclpy.qos import DurabilityPolicy, QoSProfile
@@ -158,14 +158,14 @@ def urdf_text(node=None, timeout=2.0):
 
 
 def over(pct):
-    """เกินตอน calibrate ไหม (เทียบเลขที่แสดง ปัดเป็นจำนวนเต็มแล้ว — 100.4% แสดง 100% = ไม่เกิน)"""
+    """Over the calibration load? (compares the displayed number, rounded to an integer — 100.4% shows as 100% = not over)"""
     return round(pct) > 100
 
 
 def label(pct):
-    """ข้อความสั้นตามระดับภาระ"""
+    """Short text for the load level"""
     if not over(pct):
         return "✓"
     if round(pct) <= 115:
-        return "⚠ เกินตอน calibrate"
-    return "✗ หนักมาก"
+        return "⚠ over calibration"
+    return "✗ very heavy"

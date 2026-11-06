@@ -1,10 +1,10 @@
-# ความเร็ว / ความเร่งสูงสุดที่ MoveIt วางแผนให้แขนจริง (rad/s, rad/s²) — เป็นค่าที่แขนวิ่งจริงตอน Velocity /
-# Acceleration Scaling ใน RViz = 1.0 (dual_moveit.rviz ตั้งไว้ 1.0) ลดสเกลลง = ช้าลง เพิ่มเกิน 1.0 ไม่ได้
+# Max velocity / acceleration MoveIt plans with for the real arms (rad/s, rad/s²) — this is what the arm actually runs at with Velocity /
+# Acceleration Scaling in RViz = 1.0 (dual_moveit.rviz sets 1.0). Lower scaling = slower; it cannot go above 1.0
 #
-# 2026-10-29: เดิมเป็นค่าผู้ขาย 30°/s, 10°/s² (= เพดานเฟิร์มแวร์ — วิ่งเต็มเพดานแขนตามไม่ทัน) แล้วให้ RViz คูณ 0.3
-#   ตอนนี้ใส่ค่าที่คูณแล้วลงไฟล์ตรงๆ: 0.157 rad/s (9°/s), 0.0524 rad/s² (3°/s²) — ข้อ 2-6 วิ่งเหมือนเดิมทุกอย่าง
-#   ข้อ 1: 0.19 rad/s (10.9°/s) = ความเร็ว J1 ตอน calibrate ที่ไม่เคยรูด ต่ำกว่าเพดานในบอร์ด 11.25 (joint_speed.yaml)
-#   สายพาน J1 เคยรูด — ห้ามตั้งข้อ 1 เกิน 0.19 (บอร์ดตามไม่ทัน ตัวคุมยกเลิกกลางทาง)
+# 2026-10-29: was the vendor values 30°/s, 10°/s² (= firmware ceiling — at full ceiling the arm could not keep up) with RViz scaling 0.3
+#   Now the scaled values are written here directly: 0.157 rad/s (9°/s), 0.0524 rad/s² (3°/s²) — joints 2-6 run exactly as before
+#   Joint 1: 0.19 rad/s (10.9°/s) = J1 speed during calibrate, which never slipped; below the board ceiling 11.25 (joint_speed.yaml)
+#   The J1 belt has slipped before — never set joint 1 above 0.19 (board can't keep up, controller aborts mid-motion)
 joint_limits:
   left_joint_1:
     has_acceleration_limits: true

@@ -1,39 +1,39 @@
 #!/usr/bin/env python3
-"""arm_program — เล่นโปรแกรมท่าที่ตั้งไว้ล่วงหน้า (แขนเดียวหรือสองแขนพร้อมกัน) เมื่อมีคนส่งชื่อโปรแกรมมาทาง ROS
+"""arm_program — plays preset pose programs (one arm or both arms together) when someone sends a program name over ROS
 
   ros2 run ar_program arm_program
-  ros2 topic pub --once /arm/run  std_msgs/msg/String "{data: demo}"   # สั่งรัน
-  ros2 topic pub --once /arm/stop std_msgs/msg/Empty "{}"              # หยุดกลางคัน
-  ros2 topic echo /arm/done                                            # ผล: demo:ok / demo:error:...
+  ros2 topic pub --once /arm/run  std_msgs/msg/String "{data: demo}"   # run
+  ros2 topic pub --once /arm/stop std_msgs/msg/Empty "{}"              # stop midway
+  ros2 topic echo /arm/done                                            # result: demo:ok / demo:error:...
 
-หัวข้อ
-  /arm/run   (sub, String)  ชื่อโปรแกรมใน programs.yaml, "@ท่า" (แขนซ้าย) หรือ "@right:ท่า" = ไปท่าเดียว
-  /arm/stop  (sub, Empty)   ยกเลิกโปรแกรมที่กำลังรัน (ทุกแขนหยุดที่ตำแหน่งปัจจุบัน)
-  /arm/done  (pub, String)  "<โปรแกรม>:ok" | ":error:<เหตุผล>" | ":stopped" | ":rejected:busy"
-  /arm/state (pub, String)  "idle" | "running:<โปรแกรม>:<ขั้นที่>/<ทั้งหมด>:<ซ้าย>/<ขวา>[ มือ <ท่า>]"
-  /hand/gesture       (pub, String)  ท่ามือของมือบนแขนซ้าย (amazinghand_node ใน humanoi_games)
-  /right_hand/gesture (pub, String)  ท่ามือของมือบนแขนขวา (ยังไม่มีมือ — ถ้าไม่มีใครฟังจะเตือนแล้วข้าม)
+Topics
+  /arm/run   (sub, String)  program name in programs.yaml, "@pose" (left arm) or "@right:pose" = go to a single pose
+  /arm/stop  (sub, Empty)   cancel the running program (every arm stops where it is)
+  /arm/done  (pub, String)  "<program>:ok" | ":error:<reason>" | ":stopped" | ":rejected:busy"
+  /arm/state (pub, String)  "idle" | "running:<program>:<step>/<total>:<left>/<right>[ <arm> hand <gesture>]"
+  /hand/gesture       (pub, String)  hand gesture for the hand on the left arm (amazinghand_node in humanoi_games)
+  /right_hand/gesture (pub, String)  hand gesture for the hand on the right arm (no hand yet — if nobody listens, warn and skip)
 
-พารามิเตอร์
-  programs_file       ไฟล์ท่า/โปรแกรม (อ่านใหม่ทุกครั้งที่สั่งรัน แก้ไฟล์แล้วไม่ต้องรีสตาร์ท)
-  layout              dual (ค่าเริ่ม: ar_dual สองแขน ข้อต่อ left_joint_N/right_joint_N ตัวคุม <แขน>_arm_controller)
-                      | single (แขนเดี่ยวแบบเดิม ข้อต่อ joint_N ใช้ action_name) — single มีแต่แขนซ้าย
-  action_name         เฉพาะ single: /joint_trajectory_controller/follow_joint_trajectory
-                      (แขนจริงในชุด dual_real_sim ใช้ /real/joint_trajectory_controller/...)
-  joint_states_topic  /joint_states  (แขนจริงในชุด dual_real_sim ใช้ /real/joint_states)
-  sync                true = แขนที่ขยับในขั้นเดียวกันถึงพร้อมกัน (แขนที่ไปใกล้กว่าวิ่งช้าลง)
-  speed               ความเร็วช่วงวิ่งคงที่ของข้อต่อที่ไปไกลสุด rad/s (ค่าเริ่ม 0.4 แต่ถูกจำกัดที่ max_speed)
-  accel               อัตราเร่ง/เบรก rad/s^2 (0.08 ≈ 4.6°/s^2 — สายพาน J1 เคยรูดตอนแขนยื่นไกลแล้วเร่ง/หยุดแรง)
-  max_speed           เพดานของ speed (0.19 = ความเร็ว J1 ตอน calibrate) — บอร์ดจำกัด J1 ไว้ 11.25°/s
-                      (ar_dual/config/joint_speed.yaml) สั่งเร็วกว่านี้แขนตามไม่ทันจนเกิน path tolerance
-                      0.2 rad ของ controller แล้วโดน abort กลางทาง (เดิม 0.22 ก่อนจำกัด J1 ในบอร์ด)
-  min_move_time       เวลาขั้นต่ำต่อท่า วินาที (กันสั่งกระชากตอนท่าห่างกันนิดเดียว)
+Parameters
+  programs_file       pose/program file (re-read on every run; no restart needed after editing)
+  layout              dual (default: ar_dual two arms, joints left_joint_N/right_joint_N, controllers <arm>_arm_controller)
+                      | single (old single-arm setup, joints joint_N, uses action_name) — single has the left arm only
+  action_name         single only: /joint_trajectory_controller/follow_joint_trajectory
+                      (the real arm in the dual_real_sim set uses /real/joint_trajectory_controller/...)
+  joint_states_topic  /joint_states  (the real arm in the dual_real_sim set uses /real/joint_states)
+  sync                true = arms moving in the same step arrive together (the arm with less to travel runs slower)
+  speed               cruise speed of the joint travelling furthest, rad/s (default 0.4 but capped at max_speed)
+  accel               accel/brake rate rad/s^2 (0.08 ≈ 4.6°/s^2 — the J1 belt has slipped with the arm reaching far out under hard accel/stops)
+  max_speed           cap on speed (0.19 = J1 speed during calibration) — the board limits J1 to 11.25°/s
+                      (ar_dual/config/joint_speed.yaml); faster commands leave the arm lagging beyond the path tolerance
+                      0.2 rad of the controller and it gets aborted midway (was 0.22 before J1 was limited in the board)
+  min_move_time       minimum time per pose in seconds (avoids jerky moves when poses are very close)
 
-ทุกขั้น แขนที่มีท่าเริ่มพร้อมกัน แขนที่ still ไม่ถูกสั่ง (ค้างอยู่ที่เดิม) ขั้นถัดไปเริ่มเมื่อทุกแขนถึงแล้ว
-ท่ามือในขั้นส่งตอนเริ่มขั้น (ขยับพร้อมแขน) ขั้นจบเมื่อแขนถึงและมือใช้เวลาครบ (programs.HAND_GESTURES)
-ทุกท่าส่งตรงเข้า joint_trajectory_controller เป็นเส้นตรงในปริภูมิข้อต่อ (เหมือน Move J ของ HMI)
-ด้วยโปรไฟล์ เร่ง → ความเร็วคงที่ → เบรก (programs.trapezoid) ไม่ผ่าน MoveIt จึงไม่มีการเช็คการชน
-— รวมถึงสองแขนชนกันเอง/ชนเสา ผลออกมาเหมือนเดิมทุกรอบ ทดสอบโปรแกรมช้าๆ ก่อนเสมอ
+In every step the arms with a pose start together; arms set to still get no command (stay put); the next step starts once every arm has arrived
+Hand gestures in a step are sent when the step starts (moving with the arm); a step ends when the arms have arrived and the hands have had their time (programs.HAND_GESTURES)
+Every pose goes straight to joint_trajectory_controller as a straight line in joint space (like Move J on the HMI)
+with an accelerate → cruise → brake profile (programs.trapezoid); it does not go through MoveIt, so there is no collision check
+— including the two arms hitting each other / the post; the result is the same every run, so always test programs slowly first
 """
 import math
 import threading
@@ -54,7 +54,7 @@ from ar_program import programs
 
 
 def _wait(future, timeout):
-    """รอ future ของ rclpy จากเธรดอื่น (executor หมุนอยู่ในเธรดหลัก)"""
+    """Wait for an rclpy future from another thread (the executor spins in the main thread)"""
     done = threading.Event()
     future.add_done_callback(lambda _: done.set())
     if not done.wait(timeout):
@@ -66,7 +66,7 @@ def _duration(secs):
     return Duration(sec=int(secs), nanosec=int((secs - int(secs)) * 1e9))
 
 
-ARM_TH = {"left": "ซ้าย", "right": "ขวา"}
+ARM_TH = {"left": "left", "right": "right"}
 
 
 class ArmProgram(Node):
@@ -110,8 +110,8 @@ class ArmProgram(Node):
         self.goal_handles = []
         self._state("idle")
         self.get_logger().info(
-            f"arm_program พร้อม ({self.layout}) — {', '.join(actions.values())} | "
-            f"ไฟล์ {self.get_parameter('programs_file').value}")
+            f"arm_program ready ({self.layout}) — {', '.join(actions.values())} | "
+            f"file {self.get_parameter('programs_file').value}")
 
     # ---------- callbacks ----------
     def _on_js(self, msg):
@@ -122,7 +122,7 @@ class ArmProgram(Node):
         name = msg.data.strip()
         with self.lock:
             if self.busy:
-                self.get_logger().warn(f"ปฏิเสธ '{name}' — กำลังรันโปรแกรมอื่นอยู่")
+                self.get_logger().warn(f"Rejected '{name}' — another program is running")
                 self._done(f"{name}:rejected:busy")
                 return
             self.busy = True
@@ -132,7 +132,7 @@ class ArmProgram(Node):
     def _on_stop(self, _msg):
         if not self.busy:
             return
-        self.get_logger().warn("ได้รับ /arm/stop — ยกเลิกโปรแกรม")
+        self.get_logger().warn("Got /arm/stop — cancelling the program")
         self.stop_flag.set()
         for gh in list(self.goal_handles):
             gh.cancel_goal_async()
@@ -142,17 +142,17 @@ class ArmProgram(Node):
         try:
             try:
                 result = self._execute(name)
-            except Exception as exc:  # ไม่ให้เธรดตายเงียบ — ต้องรายงานกลับเสมอ
+            except Exception as exc:  # don't let the thread die silently — always report back
                 result = f"error:{exc}"
             self._done(f"{name}:{result}")
-            # แยก info/error คนละบรรทัด: rclpy จำระดับ log ต่อ "บรรทัดที่เรียก" ถ้าบรรทัดเดียวกัน
-            # พิมพ์คนละระดับจะ raise ValueError (เคยทำให้เธรดตายแล้ว busy ค้าง True ถาวร)
+            # info/error on separate lines: rclpy remembers the log level per "calling line"; if the same line
+            # logs at different levels it raises ValueError (this once killed the thread and left busy stuck at True forever)
             if result == "ok":
-                self.get_logger().info(f"โปรแกรม '{name}' จบ: ok")
+                self.get_logger().info(f"Program '{name}' finished: ok")
             else:
-                self.get_logger().error(f"โปรแกรม '{name}' จบ: {result}")
+                self.get_logger().error(f"Program '{name}' finished: {result}")
         finally:
-            # ปลด busy ใน finally เสมอ — ถ้าค้าง True ทุกคำสั่งหลังจากนี้จะโดน rejected:busy หมด
+            # always clear busy in finally — if it stays True, every later command gets rejected:busy
             self.goal_handles = []
             self._state("idle")
             with self.lock:
@@ -168,25 +168,25 @@ class ArmProgram(Node):
         used = {arm for kind, value, _ in steps if kind == "move" for arm in value}
         for arm in sorted({arm for _, _, hands in steps for arm in hands}):
             if not self.hand_pubs[arm].get_subscription_count():
-                self.get_logger().warn(f"ไม่มีตัวคุมมือบนแขน{ARM_TH[arm]} ฟังอยู่ "
-                                       f"({self.hand_pubs[arm].topic_name}) — ท่ามือของแขนนี้จะถูกข้าม")
+                self.get_logger().warn(f"No hand controller listening on the {ARM_TH[arm]} arm "
+                                       f"({self.hand_pubs[arm].topic_name}) — this arm's hand gestures will be skipped")
         for arm in used:
             if not self.action_clients[arm].wait_for_server(timeout_sec=3.0):
-                return f"error:ไม่พบตัวคุมแขน{ARM_TH[arm]} (ระบบแขนเปิดอยู่ไหม)"
+                return f"error:{ARM_TH[arm]} arm controller not found (is the arm system on?)"
             if not all(j in self.current for j in programs.joint_names(arm, self.layout)):
-                return f"error:ยังไม่ได้รับ joint_states ของแขน{ARM_TH[arm]} ครบ 6 ข้อต่อ"
+                return f"error:joint_states for all 6 joints of the {ARM_TH[arm]} arm not received yet"
 
         speed = float(self.get_parameter("speed").value)
         max_speed = float(self.get_parameter("max_speed").value)
         if speed > max_speed:
             self.get_logger().warn(
-                f"speed {speed:.2f} เกินเพดาน {max_speed:.2f} rad/s — ใช้ {max_speed:.2f} "
-                "(เร็วกว่านี้เฟิร์มแวร์ตามไม่ทัน controller จะ abort)")
+                f"speed {speed:.2f} is over the cap {max_speed:.2f} rad/s — using {max_speed:.2f} "
+                "(faster than this the firmware can't keep up and the controller aborts)")
             speed = max_speed
         accel = float(self.get_parameter("accel").value)
         min_time = float(self.get_parameter("min_move_time").value)
         sync = bool(self.get_parameter("sync").value)
-        self.get_logger().info(f"เริ่มโปรแกรม '{name}' ({len(steps)} ขั้น)")
+        self.get_logger().info(f"Starting program '{name}' ({len(steps)} steps)")
 
         for i, (kind, value, hands) in enumerate(steps, 1):
             if self.stop_flag.is_set():
@@ -202,38 +202,38 @@ class ArmProgram(Node):
 
             self._state(f"running:{name}:{i}/{len(steps)}:" + "/".join(
                 value[arm][0] if arm in value else "-" for arm in self.arms)
-                + "".join(f" มือ{ARM_TH[arm]} {g}" for arm, g in hands.items()))
+                + "".join(f" {ARM_TH[arm]} hand {g}" for arm, g in hands.items()))
             step_start = time.monotonic()
-            for arm, gesture in hands.items():  # มือขยับพร้อมแขน
+            for arm, gesture in hands.items():  # hands move together with the arms
                 self.hand_pubs[arm].publish(String(data=gesture))
             hand_end = step_start + max([programs.hand_duration(g) for g in hands.values()] or [0.0])
-            if not value:  # ขั้นมืออย่างเดียว
-                self.get_logger().info(f"  ขั้น {i}/{len(steps)}: " + " · ".join(
-                    f"มือ{ARM_TH[arm]} -> {g}" for arm, g in hands.items()))
+            if not value:  # hand-only step
+                self.get_logger().info(f"  step {i}/{len(steps)}: " + " · ".join(
+                    f"{ARM_TH[arm]} hand -> {g}" for arm, g in hands.items()))
                 if not self._sleep_until(hand_end):
                     return "stopped"
                 continue
             starts = {arm: [self.current[j] for j in programs.joint_names(arm, self.layout)] for arm in value}
             plans = {arm: programs.trapezoid(starts[arm], target, speed, accel, min_time)
                      for arm, (_, target) in value.items()}
-            if sync and len(plans) > 1:  # ให้ถึงพร้อมกัน: ยืดแขนที่เร็วกว่าให้ใช้เวลาเท่าแขนที่ช้าที่สุด
+            if sync and len(plans) > 1:  # arrive together: stretch the faster arms to take as long as the slowest
                 longest = max(p[-1][0] for p in plans.values())
                 plans = {arm: programs.trapezoid(starts[arm], target, speed, accel, longest)
                          for arm, (_, target) in value.items()}
-            self.get_logger().info(f"  ขั้น {i}/{len(steps)}: " + " · ".join(
+            self.get_logger().info(f"  step {i}/{len(steps)}: " + " · ".join(
                 f"{ARM_TH[arm]} -> '{pose}' "
                 f"{math.degrees(max(abs(t - s) for t, s in zip(target, starts[arm]))):.1f}° "
                 f"{plans[arm][-1][0]:.1f} s" for arm, (pose, target) in value.items())
-                + "".join(f" · มือ{ARM_TH[arm]} -> {g}" for arm, g in hands.items()))
+                + "".join(f" · {ARM_TH[arm]} hand -> {g}" for arm, g in hands.items()))
             err = self._move(plans)
             if err:
                 return err
-            if not self._sleep_until(hand_end):  # แขนถึงก่อนมือทำท่าเสร็จ (เช่นท่าเคลื่อนไหว) — รอมือ
+            if not self._sleep_until(hand_end):  # arms arrived before the hand finished its gesture (e.g. a moving gesture) — wait for the hand
                 return "stopped"
         return "ok"
 
     def _sleep_until(self, t):
-        """รอถึงเวลา t — คืน False ถ้าโดนสั่งหยุดระหว่างรอ"""
+        """Wait until time t — returns False if stopped while waiting"""
         while time.monotonic() < t:
             if self.stop_flag.is_set():
                 return False
@@ -241,7 +241,7 @@ class ArmProgram(Node):
         return True
 
     def _move(self, plans):
-        """ส่งทุกแขนพร้อมกัน แล้วรอจนครบทุกแขน — แขนไหนพังให้หยุดแขนที่เหลือด้วย"""
+        """Send to every arm at once, then wait for all of them — if one arm fails, stop the others too"""
         futures = {}
         for arm, points in plans.items():
             goal = FollowJointTrajectory.Goal()
@@ -259,7 +259,7 @@ class ArmProgram(Node):
             if gh is None or not gh.accepted:
                 for other in accepted.values():
                     other.cancel_goal_async()
-                return f"error:ตัวคุมแขน{ARM_TH[arm]} ไม่รับคำสั่ง (goal rejected)"
+                return f"error:{ARM_TH[arm]} arm controller did not accept the goal (goal rejected)"
             accepted[arm] = gh
         self.goal_handles = list(accepted.values())
         secs = max(points[-1][0] for points in plans.values())
@@ -271,8 +271,8 @@ class ArmProgram(Node):
                 for other in accepted.values():
                     other.cancel_goal_async()
                 if res is None:
-                    return f"error:แขน{ARM_TH[arm]} รอผลการเคลื่อนที่เกินเวลา"
-                return (f"error:ตัวคุมแขน{ARM_TH[arm]} รายงาน error {res.result.error_code} "
+                    return f"error:{ARM_TH[arm]} arm: timed out waiting for the motion result"
+                return (f"error:{ARM_TH[arm]} arm controller reported error {res.result.error_code} "
                         f"{res.result.error_string}").strip()
         return None
 
