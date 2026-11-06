@@ -7,8 +7,8 @@
   ar_ports.py --dir <พอร์ต> 000010 # ตั้งข้อที่มอเตอร์หมุนกลับด้าน J1..J6 (1 = กลับ) — แขนที่ประกอบข้อนั้นกลับด้าน
   ar_ports.py --identify           # ไล่ทีละบอร์ด: ข้อ 6 หมุนไป-กลับ 10° ให้ดูว่าแขนไหนขยับ แล้วตอบ l/r ตั้งชื่อให้เลย
   ar_ports.py --wiggle <พอร์ต|left|right>  # หมุนข้อ 6 ไป-กลับ ของบอร์ดเดียว (เช็กว่าชื่อนั้นคือแขนไหนจริง)
-  ar_ports.py --jog <พอร์ต|left|right> <ข้อ 1-6> <องศา> [รอบ]  # หมุนข้อนั้น +องศา -> กลับ -> -องศา -> กลับ
-                                   # ทดสอบมอเตอร์/สายพานทั้งสองทิศ (บน PC ใช้พอร์ต COMx ได้ เช่น --jog COM9 4 30)
+  ar_ports.py --jog <พอร์ต|left|right> <ข้อ 1-6> <องศา> [รอบ]  # หมุนข้อนั้นไปทางสวิตช์ -> กลับ -> อีกทาง -> กลับ
+                                   # เช็กทิศมอเตอร์ก่อน calibrate + ทดสอบมอเตอร์/สายพาน (arm jog · บน PC ใช้ COMx ได้)
 
 ทำไมต้องถามบอร์ด: Teensy สองแขนรายงานหมายเลข USB เดียวกัน (13173040) /dev/serial/by-id จึงแยกไม่ได้
 และ /dev/serial/by-path ผูกกับพอร์ต — ย้ายสายแล้วหาไม่เจอ · เฟิร์มแวร์ AR4_ROS2_seq v2 ตอบชื่อแขน (JN) ได้
@@ -32,6 +32,8 @@ WIGGLE_JOINT = 5     # ข้อ 6 (ข้อมือหมุน) — หม�
 WIGGLE_DEG = 10.0
 SEQ_FW = ("seq2", "seq3")  # เฟิร์มแวร์ที่เก็บชื่อแขน/ทิศมอเตอร์ได้ (v3 = v2 + ค่าชดเชยศูนย์ JZ)
 JOG_MAX_DEG = 90.0
+# ทางที่แต่ละข้อวิ่งหาสวิตช์ตอน calibrate (เครื่องหมายของมุมปลาย CAL_END ใน ar_calibrate.py: J1 -170 J2 -42 J3 +52 ...)
+CAL_SIGN = [-1, -1, 1, -1, -1, 1]
 EXCL = {"exclusive": True} if os.name == "posix" else {}   # Windows เปิดพอร์ตแบบผูกขาดอยู่แล้ว
 ARM_ALIASES = {"l": "left", "left": "left", "1": "left", "ซ้าย": "left",
                "r": "right", "right": "right", "2": "right", "ขวา": "right"}
@@ -133,29 +135,42 @@ def wiggle(port, times=2):
 
 
 def jog(port, joint, deg, cycles=1):
-    """หมุนข้อ joint (1-6) ไป +deg -> กลับ -> -deg -> กลับ ทีละรอบ แล้วจบที่ตำแหน่งเดิม
+    """หมุนข้อ joint (1-6) ไปทางสวิตช์ deg -> กลับ -> อีกทาง deg -> กลับ ทีละรอบ แล้วจบที่ตำแหน่งเดิม
 
-    สั่งด้วย MT แบบเดียวกับไดรเวอร์ ROS ความเร็ว/ความเร่งเป็นค่าในเฟิร์มแวร์ (30°/s, 10°/s²)
+    สั่งด้วย MT แบบเดียวกับไดรเวอร์ ROS · ตั้งเพดานความเร็วจาก config/joint_speed.yaml ก่อน (J1 11.25°/s)
+    ไม่ต้อง calibrate ก่อน — ใช้เช็กทิศมอเตอร์หลังเปลี่ยนมอเตอร์/ไดรเวอร์: ขาแรกต้องหมุนเข้าหาสวิตช์
+    (JD กลับทิศทั้งตอน calibrate และตอน MT พร้อมกัน — ขาแรกไปทางไหน calibrate ก็วิ่งไปทางนั้น)
     "ถึง" = Teensy ส่งสเต็ปครบแล้ว — มอเตอร์ลื่นสเต็ปหรือไม่ต้องดู/ฟังที่แขนและจอไดรเวอร์เอง
     """
+    from ar_zero import set_speed  # ar_zero.py อยู่โฟลเดอร์เดียวกัน
     j = joint - 1
+    toward = CAL_SIGN[j]
     timeout = 4.0 + 3.0 * math.sqrt(abs(deg) / 10.0)
     with serial.Serial(port, 115200, timeout=0.3, **EXCL) as ser:
         time.sleep(0.2)
         start = read_joints(ser)
         if start is None:
             raise RuntimeError("บอร์ดไม่ตอบ JP (กำลัง calibrate / ระบบแขนใช้อยู่ / ไม่ใช่เฟิร์มแวร์ ROS?)")
-        name = ask(ser, "JN", "JN") if ask(ser, "JV", "JV") in SEQ_FW else None
+        seq = ask(ser, "JV", "JV") in SEQ_FW
+        name = ask(ser, "JN", "JN") if seq else None
+        mask = ask(ser, "JD", "JD") if seq else None
+        set_speed(ser, f" {name}" if name else "")
         print(f"{port} (แขน {name or 'ไม่มีชื่อ'}): J{joint} อยู่ที่ {start[j]:+.1f}° — หมุน ±{deg:.0f}° {cycles} รอบ")
+        print(f"  ขาแรก ({toward * deg:+.0f}°) = ทางที่ calibrate วิ่งหาสวิตช์ข้อ {joint} — ข้อต้องหมุนเข้าหาสวิตช์")
+        if mask and len(mask) == 6:
+            flip = mask[:j] + ("0" if mask[j] == "1" else "1") + mask[j + 1:]
+            print(f"  ถ้าหมุนหนีสวิตช์ = มอเตอร์กลับทิศ → ห้าม calibrate · แก้: arm dir {name or '<แขน>'} {flip}"
+                  f"  (ตอนนี้ {mask}) แล้ว jog ซ้ำ")
         try:
             for c in range(1, cycles + 1):
-                for off in (deg, 0.0, -deg, 0.0):
+                for off in (toward * deg, 0.0, -toward * deg, 0.0):
                     target = list(start)
                     target[j] += off
                     t0 = time.monotonic()
                     ok = move_to(ser, target, j, timeout)
-                    print(f"  รอบ {c}: J{joint} -> {off:+.0f}° " + (f"ถึง ({time.monotonic() - t0:.1f} s)" if ok else "ไม่ถึงในเวลา"),
-                          flush=True)
+                    side = " (ทางสวิตช์)" if off * toward > 0 else ""
+                    print(f"  รอบ {c}: J{joint} -> {off:+.0f}°{side} "
+                          + (f"ถึง ({time.monotonic() - t0:.1f} s)" if ok else "ไม่ถึงในเวลา"), flush=True)
                     if not ok:
                         move_to(ser, start, j, timeout)
                         return False
